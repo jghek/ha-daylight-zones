@@ -1,6 +1,6 @@
 # Night Compensation — design
 
-Status: **draft for review** (2026-11-03). No code yet.
+Status: **implemented, not released** (2026-11-03). Version 0.1.0 is in this repository and tested, but not installed on any Home Assistant yet.
 
 A Home Assistant custom integration that drives lights per **zone** from how dark it is outside, with a
 bedtime schedule, a sleep mode, an eye-adjustment boost at dusk, and overrides for visitors.
@@ -33,7 +33,7 @@ Non-goals:
 | Schedule level | 0–100 %, from the bedtime schedule (§5). |
 | Zone level | The final level after schedule, sleep, overrides (§6). Exposed as `sensor.<zone>_level`. |
 | Light brightness | Zone level × the light's maximum, clamped to the light's minimum (§7). |
-| Phase | Where the zone is in its day: `day`, `evening_ramp`, `peak`, `settle`, `cosy`, `bedtime_fade`, `night`, `morning_ramp`, `sleep`. Phase changes end manual pauses. |
+| Phase | Where the zone is in its day: `day`, `evening_ramp`, `peak`, `settle`, `cosy`, `bedtime_fade`, `night`, `wake_fade`, `morning_ramp`; or what overrides it: `sleep`, `boost`, `max`, `override`, `paused`. A change of the day phases ends manual pauses. |
 
 ## 3. Effective elevation
 
@@ -166,25 +166,25 @@ Order, highest priority first:
 
 1. **Pause** override: the zone's lights are left alone entirely.
 2. **Sleep mode** (if the zone's sleep behaviour is not `ignore`): the zone goes to its sleep level (`off` or a set %), with its own fade time. Switching sleep mode on clears the zone's `boost`, `max` and `level` overrides.
-3. **Override** `boost` (curve as if E were in the peak phase: stays at `peak`, no settle), `max` (100 %) or `level` (a set %).
+3. **Override** `boost` (the `peak` level), `max` (100 %) or `level` (a set %). Overrides ignore the curve and the bedtime schedule: visitors who stay past bedtime keep their light.
 4. **Curve level × schedule level.**
 
 ## 7. Driving the lights
 
 - Per light: `max` (% of the light's full brightness) and `min` (% below which the light flickers or stays dark).
   Brightness = zone level × `max`. If that is above 0 but below `min`, it becomes `min`. At 0 % the light is switched off.
-- A command is only sent when the brightness changes by at least 1 %, or when on/off changes. Normal steps use a 2 s transition; sleep uses the zone's sleep fade.
+- A command is only sent when on/off or the light's 0–255 brightness value changes. Measuring the change in brightness values, not in percent, keeps dim lights smooth: a light with a 4 % maximum has only about 10 values. Normal steps use a 2 s transition; sleep uses the zone's sleep fade.
 - **Rate limit**: the zone level moves at most `max_step` % per minute (default 5 %), so a passing cloud on the lux sensor never makes lights jump.
   Sleep, override and manual changes bypass the rate limit.
 - **Manual change detection**: a light state change whose context did not come from the integration (a wall switch, the app, a voice command)
-  pauses that light until the zone's next phase change. Becoming unavailable and available again does not count as a manual change.
+  pauses that light until the zone's next phase change. Becoming unavailable and available again does not count as a manual change, and neither does a state report within the transition time + 5 s after the integration's own command, or one that matches the command within 3 %.
 - Recalculation: every 60 s, and immediately on a change of sleep mode, override, zone settings or the lux sensor.
 
 ## 8. Actions and events
 
 | Action | Fields | Effect |
 |---|---|---|
-| `night_compensation.set_override` | `zone` (one or more zone devices), `mode` (`boost` / `max` / `level` / `pause`), `level` (%), `until` (`next_phase` / `sleep` / `morning` / `duration`), `duration` | Sets an override. |
+| `night_compensation.set_override` | `zone` (one or more zone devices), `mode` (`boost` / `max` / `level` / `pause`), `level` (%), `until` (`next_phase` / `noon` / `duration`, default `noon`), `duration` | Sets an override. `noon` is the next solar noon, so an evening override lasts the night. Sleep mode always ends `boost`, `max` and `level`; `pause` stays until its end condition. |
 | `night_compensation.clear_override` | `zone` | Back to automatic, also clears manual pauses. |
 
 Event `night_compensation_phase_changed` with `zone`, `from`, `to`, so other automations can react, for example "close the curtains when the living room enters `peak`".
@@ -220,23 +220,23 @@ Event `night_compensation_phase_changed` with `zone`, `from`, `to`, so other aut
 | `time.<zone>_off_weekday` / `_on_weekday` / `_off_weekend` / `_on_weekend` | time | 00:00 / 07:00 / 02:00 / 10:00 |
 | `number.<zone>_bedtime_fade` | min | 30 |
 | `number.<zone>_sleep_level` / `_sleep_fade` | % / s | 0 / 10 |
-| `select.<zone>_mode` | enum | `auto` / `boost` / `max` / `level` / `pause` |
+| `select.<zone>_mode` | enum | `auto` / `boost` / `max` / `level` / `pause`; choosing one here lasts until the next solar noon |
 | `number.<zone>_override_level` | % | 80 |
 
 Entities for options a zone does not use (boost, schedule, sleep level) are not created.
 
 ## 10. Implementation outline
 
-- Domain `night_compensation`, `integration_type: service`, `iot_class: calculated`. No external requirements beyond astral, which HA ships.
+- Domain `night_compensation`, `integration_type: service`, `iot_class: calculated`, single config entry. No external requirements beyond astral, which HA ships.
 - One config entry, one subentry per zone, one device per zone.
 - `curve.py`: pure functions (effective elevation, caps, curves, schedule, composition). No HA imports, so it is unit-tested directly over a full simulated year.
 - `zone.py`: one controller per zone: timer, listeners (sleep entity, lux sensor, its lights), rate limit, manual-change detection, sending commands.
 - Platforms: `sensor`, `number`, `time`, `select`. Settings are stored with `RestoreEntity`.
-- Tests: `curve.py` against the example timelines in §4.3 and the caps in §3.3; controller tests with fake lights for manual changes, sleep, overrides and the rate limit.
+- Tests: `curve.py` against the example timelines in §4.3 and the caps in §3.3; a comparison with the replaced template formulas over a full year (sun factor) and a week (schedule); controller tests with fake lights for manual changes, sleep, overrides and the rate limit; and an end-to-end run of 26 hours, minute by minute, comparing the commanded brightness with the replaced script (at most 1 brightness value apart, 20 commands instead of 1 560).
 
 ## 11. Migration from the current setup (later, not now)
 
-The migration ports today's behaviour 1:1 first (boost off), so nobody at home notices the switch. Boost and winter bias are enabled afterwards.
+The migration ports today's behaviour 1:1 first (boost off, cosy 100 %, maximum step 100 %/min, winter bias 0°), so nobody at home notices the switch. Boost, winter bias and the rate limit are enabled afterwards.
 It is done while someone who knows about it is at home.
 
 | Zone | Lights (max %) | Curve now | Schedule | Sleep |

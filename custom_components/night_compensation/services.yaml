@@ -1,0 +1,32 @@
+set_override:
+  fields:
+    zone:
+      required: true
+      selector:
+        device:
+          integration: night_compensation
+          multiple: true
+    mode:
+      required: true
+      selector:
+        select:
+          options: [boost, max, level, pause]
+    level:
+      selector:
+        number: {min: 0, max: 100, unit_of_measurement: "%"}
+    until:
+      default: noon
+      selector:
+        select:
+          options: [next_phase, noon, duration]
+    duration:
+      selector:
+        duration: {}
+clear_override:
+  fields:
+    zone:
+      required: true
+      selector:
+        device:
+          integration: night_compensation
+          multiple: true
