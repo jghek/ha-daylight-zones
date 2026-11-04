@@ -9,7 +9,7 @@ from pytest_homeassistant_custom_component.common import async_capture_events, a
 
 from custom_components.daylight_zones.const import DOMAIN, EVENT_PHASE_CHANGED
 
-from .conftest import OFFICE, ZONE, setup_zone
+from .conftest import OFFICE, ZONE, dimmer, setup_zone
 
 
 def last(calls, entity_id):
@@ -41,7 +41,6 @@ async def test_entities_and_cosy_evening(home, calls):
     assert state(home, "sensor.living_level") == "60.0"
     assert state(home, "sensor.living_phase") == "cosy"
     assert state(home, "number.living_cosy_level") == "60.0"
-    assert state(home, "time.living_off_weekday") == "00:00:00"
     assert state(home, "switch.living_auto") == "on"
     assert state(home, "switch.living_override") == "off"
     assert calls["on"][-2].data["brightness"] == round(30 * 2.55)  # light.a: 60 % × max 50 %
@@ -52,14 +51,13 @@ async def test_entities_and_cosy_evening(home, calls):
 async def test_unused_settings_are_not_created(home, calls):
     await setup_zone(home, ZONE | {"use_boost": False, "off_hours": "none"})
     assert home.states.get("number.living_boost_peak") is None
-    assert home.states.get("time.living_off_weekday") is None
     assert home.states.get("number.living_off_hours_fade") is None
     assert home.states.get("number.living_cosy_level") is not None
 
 
 async def test_rate_limit_and_only_sending_changes(home, calls, freezer):
     await setup_zone(home)
-    home.states.async_set("light.b", "on", {"brightness": round(60 * 2.55)}, context=Context())  # device confirms our command
+    home.states.async_set("light.b", "on", {"brightness": dimmer(60, 100, 10)}, context=Context())  # device confirms our command
     sent = count(calls, "light.b")
     await tick(home, freezer)
     assert count(calls, "light.b") == sent
@@ -93,8 +91,8 @@ async def test_override_switch_also_works_when_auto_is_off(home, calls, freezer)
     await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_auto"}, blocking=True)
     await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_override"}, blocking=True)
     assert state(home, "sensor.living_level") == "80.0"
-    assert last(calls, "light.b").data["brightness"] == round(80 * 2.55)
-    home.states.async_set("light.b", "on", {"brightness": 204}, context=Context())  # the light reports our command
+    assert last(calls, "light.b").data["brightness"] == dimmer(80, 100, 10)
+    home.states.async_set("light.b", "on", {"brightness": dimmer(80, 100, 10)}, context=Context())  # the light reports our command
     await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_override"}, blocking=True)
     assert last(calls, "light.b").service == "turn_off"  # auto is off, so the lights go off
 
@@ -127,8 +125,6 @@ async def test_manual_change_pauses_light_until_next_phase(home, calls, freezer)
 async def test_office_fixed_level_color_temp_and_switch_off(home, calls, freezer):
     freezer.move_to("2026-11-04 13:00:00+01:00")  # sun about 22°: day colour
     await setup_zone(home, OFFICE, title="Office")
-    for key in ("off_weekday", "off_weekend"):
-        await home.services.async_call("time", "set_value", {"entity_id": f"time.office_{key}", "time": "22:00:00"}, blocking=True)
     assert state(home, "sensor.office_level") == "80.0"
     assert state(home, "sensor.office_phase") == "on"
     assert state(home, "sensor.office_colour_temperature") == "5000"
@@ -253,9 +249,35 @@ async def test_changing_auto_back_on_while_off_applies_at_once(home, calls, free
 async def test_office_switch_off_stays_off_without_auto_back_on(home, calls, freezer):
     freezer.move_to("2026-11-04 21:00:00+01:00")
     await setup_zone(home, OFFICE, title="Office")
-    for key in ("off_weekday", "off_weekend"):
-        await home.services.async_call("time", "set_value", {"entity_id": f"time.office_{key}", "time": "22:00:00"}, blocking=True)
     await move(home, freezer, "2026-11-04 22:31:00+01:00")
     assert state(home, "switch.office_auto") == "off"
     await move(home, freezer, "2026-11-05 13:00:00+01:00")
     assert state(home, "switch.office_auto") == "off"
+
+
+async def test_restart_at_night_does_not_switch_lights_on(home, calls, freezer):
+    freezer.move_to("2026-11-04 03:00:00+01:00")  # inside the night block
+    await setup_zone(home)
+    assert state(home, "sensor.living_phase") == "off_hours"
+    assert [c for c in calls["on"] if c.data.get("brightness")] == []
+
+
+async def test_on_off_light_and_switch_follow_the_threshold(home, calls, freezer):
+    events = async_capture_events(home, "call_service")
+    home.states.async_set("light.porch", "off", {"supported_color_modes": ["onoff"]})
+    home.states.async_set("switch.relay", "off")
+    zone = ZONE | {"use_boost": False, "lights": {"light.porch": {"type": "on_off", "threshold": 50}, "switch.relay": {"type": "on_off", "threshold": 50}}}
+    await setup_zone(home, zone)  # cosy 60 % >= 50: both on
+    assert last(calls, "light.porch").data == {"entity_id": "light.porch", "transition": 2}
+    relay = [e.data for e in events if e.data["domain"] == "switch" and e.data["service_data"].get("entity_id") == "switch.relay"]
+    assert relay[-1]["service"] == "turn_on"
+    home.states.async_set("light.porch", "on", {"supported_color_modes": ["onoff"]}, context=Context())
+    home.states.async_set("switch.relay", "on", context=Context())
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 49}, blocking=True)
+    await tick(home, freezer, 5)
+    assert last(calls, "light.porch").service == "turn_on"  # 49 % is within the 2 % margin: stays on
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 40}, blocking=True)
+    await tick(home, freezer, 5)
+    assert last(calls, "light.porch").service == "turn_off"
+    relay = [e.data for e in events if e.data["domain"] == "switch" and e.data["service_data"].get("entity_id") == "switch.relay"]
+    assert relay[-1]["service"] == "turn_off"

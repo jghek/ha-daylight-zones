@@ -10,7 +10,6 @@ import math
 # Approximate clear-sky horizontal illuminance by solar elevation (design §3.2).
 LUX_TABLE = ((-18.0, 0.0007), (-12.0, 0.008), (-6.0, 3.4), (0.0, 600.0), (5.0, 5500.0), (10.0, 16000.0), (20.0, 38000.0), (30.0, 55000.0), (60.0, 100000.0))
 CAP_MARGIN = 1.0
-NOON = time(12)
 
 
 @dataclass(frozen=True)
@@ -24,15 +23,6 @@ class Curve:
     cosy: float = 60.0
     morning_start: float = 12.0
     morning_off: float = 15.0
-
-
-@dataclass(frozen=True)
-class OffHours:
-    off_weekday: time = time(0)
-    on_weekday: time = time(7)
-    off_weekend: time = time(2)
-    on_weekend: time = time(10)
-    fade: float = 30.0  # minutes
 
 
 @dataclass(frozen=True)
@@ -132,55 +122,59 @@ def color_temp(c: ColorTemp, e: float) -> float:
     return c.night
 
 
-def _night(now: datetime) -> date:
-    """A night belongs to the evening it started: before noon is still the previous date's night."""
-    return now.date() if now.time() >= NOON else now.date() - timedelta(days=1)
+DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
 
-def _times(hours: OffHours, night: date) -> tuple[time, time]:
-    """Friday and Saturday nights use the weekend times."""
-    return (hours.off_weekend, hours.on_weekend) if night.weekday() in (4, 5) else (hours.off_weekday, hours.on_weekday)
+def _as_time(value) -> time | None:
+    """A schedule time: a time object, or 'HH:MM[:SS]' where '24:00' means end of day (None)."""
+    if isinstance(value, time):
+        return None if value == time.max else value
+    text = str(value)
+    return None if text.startswith("24:00") else time.fromisoformat(text)
 
 
-def _off_moment(hours: OffHours, night: date, tz) -> datetime:
-    off_t = _times(hours, night)[0]
-    return datetime.combine(night + timedelta(days=1 if off_t < NOON else 0), off_t, tz)
+def off_blocks(week: dict[str, list[dict]], around: datetime, days: int = 8) -> list[tuple[datetime, datetime]]:
+    """The schedule's blocks from `days` before to `days` after `around`, as datetimes; blocks that touch (24:00 → 00:00) are merged."""
+    blocks: list[tuple[datetime, datetime]] = []
+    first = around.date() - timedelta(days=days)
+    for offset in range(2 * days + 1):
+        day = first + timedelta(days=offset)
+        for block in sorted(week.get(DAYS[day.weekday()]) or [], key=lambda b: str(b["from"])):
+            start = datetime.combine(day, _as_time(block["from"]) or time(0), around.tzinfo)
+            to = _as_time(block["to"])
+            end = datetime.combine(day + timedelta(days=1), time(0), around.tzinfo) if to is None else datetime.combine(day, to, around.tzinfo)
+            if blocks and blocks[-1][1] >= start:
+                blocks[-1] = (blocks[-1][0], max(blocks[-1][1], end))
+            else:
+                blocks.append((start, end))
+    return blocks
 
 
-def off_window_level(hours: OffHours, now: datetime) -> tuple[float, str | None]:
-    """Off hours with an end: fade to 0 at the off time, stay 0, fade back up from the on time."""
-    night = _night(now)
-    on_t = _times(hours, night)[1]
-    off = _off_moment(hours, night, now.tzinfo)
-    on = datetime.combine(night + timedelta(days=1), on_t, now.tzinfo)
-    fade = timedelta(minutes=hours.fade)
-    if now < off:
-        return 100.0, None
-    if now < off + fade:
-        return 100.0 * (1 - (now - off) / fade), "off_fade"
-    if now < on:
-        return 0.0, "off_hours"
-    if now < on + fade:
-        return 100.0 * (now - on) / fade, "on_fade"
+def off_window_level(blocks: list[tuple[datetime, datetime]], now: datetime, fade_minutes: float) -> tuple[float, str | None]:
+    """Off hours with an end: fade to 0 from the start of a block, stay 0, fade back up from its end."""
+    fade = timedelta(minutes=fade_minutes)
+    for start, end in blocks:
+        if start <= now < end:
+            return (100.0 * (1 - (now - start) / fade), "off_fade") if now - start < fade else (0.0, "off_hours")
+    ended = [end for _, end in blocks if end <= now]
+    if ended and now - max(ended) < fade:
+        return 100.0 * (now - max(ended)) / fade, "on_fade"
     return 100.0, None
 
 
-def next_off(hours: OffHours, after: datetime) -> datetime:
-    """First off moment strictly after `after` (off hours without an end: the zone switches off then)."""
-    night = _night(after) - timedelta(days=1)
-    while (moment := _off_moment(hours, night, after.tzinfo)) <= after:
-        night += timedelta(days=1)
-    return moment
+def next_off(blocks: list[tuple[datetime, datetime]], after: datetime) -> datetime | None:
+    """First block start strictly after `after` (off hours without an end: the zone switches off then)."""
+    return next((start for start, _ in blocks if start > after), None)
 
 
-def switch_off_level(hours: OffHours, now: datetime, auto_on_since: datetime) -> tuple[float, str | None, bool]:
-    """Off hours without an end: from the first off moment after the zone was switched on, fade out, then switch off.
+def switch_off_level(blocks: list[tuple[datetime, datetime]], now: datetime, auto_on_since: datetime, fade_minutes: float) -> tuple[float, str | None, bool]:
+    """Off hours without an end: from the first block start after the zone was switched on, fade out, then switch off.
 
-    Like the window mode, the fade starts at the off time. Returns (level, phase, switch_off_now).
+    Like the window mode, the fade starts at the block start. Returns (level, phase, switch_off_now).
     """
-    moment = next_off(hours, auto_on_since)
-    fade = timedelta(minutes=hours.fade)
-    if now < moment:
+    moment = next_off(blocks, auto_on_since)
+    fade = timedelta(minutes=fade_minutes)
+    if moment is None or now < moment:
         return 100.0, None, False
     if now < moment + fade:
         return 100.0 * (1 - (now - moment) / fade), "off_fade", False
@@ -193,8 +187,17 @@ def base_level(curve_pct: float, curve_phase: str, hours_pct: float, hours_phase
     return curve_pct * hours_pct / 100.0, phase
 
 
-def light_brightness(level: float, max_pct: float, min_pct: float) -> float:
-    """Brightness % for one light: level × max, raised to min when on, 0 when off."""
+def dimmer_brightness(level: float, scale: float, minimum: float) -> float:
+    """Brightness % for a dimmer: 0 stays off, 1-100 % maps linearly onto minimum-scale (y = minimum + level × (scale − minimum) / 100)."""
     if level <= 0:
         return 0.0
-    return max(level * max_pct / 100.0, min_pct)
+    return minimum + level * (scale - minimum) / 100.0
+
+
+def on_off(level: float, threshold: float, was_on: bool, margin: float) -> bool:
+    """An on/off light: on at or above the threshold, off below threshold − margin, unchanged in between."""
+    if level <= 0:
+        return False
+    if level >= threshold:
+        return True
+    return was_on and level >= threshold - margin

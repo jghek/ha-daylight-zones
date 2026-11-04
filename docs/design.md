@@ -38,7 +38,7 @@ Non-goals:
 | Brightness | `daylight` (curve over E, §4.1) or `fixed` (one level, §4.2). |
 | Off hours | `none`, `window` (fade out at the off time, back at the on time) or `switch_off` (fade out at the off time, then auto off) (§6). |
 | Zone level | The final level, 0–100 %. Exposed as `sensor.<zone>_level`. |
-| Light brightness | Zone level × the light's maximum, raised to the light's minimum (§8). |
+| Light output | Per light or switch: a dimmer (zone level mapped linearly onto min–scale) or on/off (on above a threshold) (§8). |
 | Phase | Where the zone is: `day`, `evening_ramp`, `peak`, `settle`, `cosy`, `morning_ramp` (daylight brightness), `on` (fixed brightness), `off_fade`, `off_hours`, `on_fade` (off hours), `override`, `auto_off`. A change of phase ends manual pauses. |
 
 ## 3. Effective elevation
@@ -147,15 +147,21 @@ Follows E with three points: `ct_night` at `ct_night_elevation` and below, `ct_d
 
 ## 6. Off hours (optional per zone)
 
-Times: an off time per weekday and weekend, and for `window` also an on time; and `off_fade` (minutes).
-A night belongs to the evening it started: the nights of Friday and Saturday use the weekend times. Times on both sides of midnight work.
+The off hours are the blocks of an HA **schedule helper** (Settings → Helpers → Schedule) chosen in the zone configuration,
+so every day of the week has its own blocks, edited in HA's weekly editor. One schedule can serve several zones. `off_fade` (minutes) is a zone setting.
 
-| Mode | At the off time | Afterwards |
+- A block cannot span midnight in the schedule helper, but a block ending at 24:00 and one starting at 00:00 the next day are one block for the zone:
+  a night is drawn as, for example, Fri 23:00–24:00 plus Sat 00:00–07:00, and there is no new fade at midnight.
+- The zone reads the blocks with `schedule.get_schedule` before its first update and again whenever the schedule changes or is edited,
+  so a restart at night never switches lights on for a moment.
+- The current setup, by the day after midnight, is Mon–Fri 00:00–07:00 and Sat–Sun 02:00–10:00.
+
+| Mode | At the start of a block | Afterwards |
 |---|---|---|
-| `window` | fade to 0 over `off_fade` | 0 until the on time, then fade back up over `off_fade`; the brightness curve keeps applying (level = curve × off hours) |
-| `switch_off` | fade to 0 over `off_fade` | auto switches off. The zone stays off until it is switched on again, or comes back by its auto-back-on setting; the next switch-off is the first off moment after that, so working late does not switch it off again the same night |
+| `window` | fade to 0 over `off_fade` | 0 until the block ends, then fade back up over `off_fade`; the brightness curve keeps applying (level = curve × off hours) |
+| `switch_off` | fade to 0 over `off_fade` | auto switches off. The zone stays off until it is switched on again, or comes back by its auto-back-on setting; the next switch-off is the first block start after that, so working late inside a block does not switch it off again the same night |
 
-Outdoor example (`window`, curve 0° → −10°, off 02:00, on 07:00, fade 30 min), at 52°N:
+Outdoor example (`window`, curve 0° → −10°, a block 02:00–07:00, fade 30 min), at 52°N:
 
 | Date | Evening on | Night | Morning |
 |---|---|---|---|
@@ -191,8 +197,14 @@ flowchart TD
 
 ## 8. Driving the lights
 
-- Per light: `max` (% of the light's full brightness) and `min` (% below which it flickers or stays dark).
-  Brightness = zone level × `max`; if above 0 but below `min`, it becomes `min`; at 0 % the light is switched off.
+- Per light or switch, one of two types:
+
+  | Type | Settings | Output |
+  |---|---|---|
+  | `dimmer` (default for lights that can dim) | `scale` %, `min` % | 0 % zone level: off; 1–100 %: a straight line from `min` to `scale`, y = min + level × (scale − min) / 100. `scale` is what this light gets at 100 %, so lights of different strength can share a zone; `min` is where a dimmer starts to give light |
+  | `on_off` (default for lights that cannot dim; always for `switch.*`) | `threshold` % | on when the zone level reaches the threshold, off when it drops more than 2 % below it, so it does not flicker around the threshold |
+
+- Colour temperature is only sent to lights (not switches) that support it (§5).
 - A command is only sent when on/off, the light's 0–255 brightness value, or its colour temperature (§5) changes. Measuring in brightness values
   keeps dim lights smooth: a light with a 4 % maximum has only about 10 values. Normal steps use a 2 s transition.
 - **Rate limit**: the zone level moves at most `max_step` % per minute (default 5 %), so a passing cloud never makes lights jump.
@@ -233,12 +245,12 @@ All take `zone`: one or more zone devices.
 | Setting | Values |
 |---|---|
 | Name | text |
-| Lights | list, each with `max` and `min` % (shown with the lights' friendly names) |
+| Lights and switches | `light.*` and `switch.*` entities; then per light the type (`dimmer` / `on_off`), then `scale` and `min` % for dimmers or `threshold` % for on/off (shown with the friendly names) |
 | Darkness source | `sun`, or `lux` + lux sensor + smoothing minutes |
 | Brightness | `daylight` / `fixed` |
 | Dusk boost | yes/no (daylight only) |
 | Colour temperature follows daylight | yes/no |
-| Off hours | `none` / `window` / `switch_off` |
+| Off hours | `none` / `window` / `switch_off`, and the schedule helper whose blocks are the off hours |
 
 ### 10.2 Zone entities
 
@@ -264,8 +276,6 @@ Entities for settings a zone does not use are not created.
 | `number.<zone>_maximum_step` | %/min | always | 5 |
 | `number.<zone>_colour_temperature_day` / `_dusk` / `_night` | K | colour temperature | 5000 / 3500 / 2400 |
 | `number.<zone>_day_colour_from` / `_night_colour_from` | ° | colour temperature | 20 / −8 |
-| `time.<zone>_off_weekday` / `_off_weekend` | time | off hours | 00:00 / 02:00 |
-| `time.<zone>_on_weekday` / `_on_weekend` | time | off hours `window` | 07:00 / 10:00 |
 | `number.<zone>_off_hours_fade` | min | off hours | 30 |
 | `number.<zone>_override_level` | % | always | 80 |
 
@@ -290,13 +300,13 @@ Settings, the auto switch and the override switch survive restarts. The moment a
 The migration ports today's behaviour 1:1 first (boost off, cosy 100 %, maximum step 100 %/min, winter bias 0°, no colour temperature),
 so nobody at home notices the switch. New features are enabled afterwards. It is done while someone who knows about it is at home.
 
-| Zone | Lights (max %) | Brightness | Off hours | Colour temperature |
+| Zone | Lights (dimmer scale %) | Brightness | Off hours | Colour temperature |
 |---|---|---|---|---|
-| Outside | `terrasdeur_light`, `voordeur_light` (6); `shellydimmer2_48e7297d2798` (oprit, 100); `shellyprodm1pm_fce8c0d81a74` (tuin achter, 15); `kantoor_buiten_achter`, `kantoor_buiten_voor` (8); `shellyprodm1pm_a0dd6c9e2390_light_0` (tuin voor, 15) | daylight 0° → −10°, morning −10° → 0° | window 00:00–07:00 / 02:00–10:00 | no |
-| Hallway | `gang_achter`, `gang_trap`, `gang_voordeur`, `gang_woonkamer` (4) | daylight 15° → 12°, morning 12° → 15° | window | later |
+| Outside | `terrasdeur_light`, `voordeur_light` (6); `shellydimmer2_48e7297d2798` (oprit, 100); `shellyprodm1pm_fce8c0d81a74` (tuin achter, 15); `kantoor_buiten_achter`, `kantoor_buiten_voor` (8); `shellyprodm1pm_a0dd6c9e2390_light_0` (tuin voor, 15) | daylight 0° → −10°, morning −10° → 0° | window, schedule Mon–Fri 00:00–07:00, Sat–Sun 02:00–10:00 | no |
+| Hallway | `gang_achter`, `gang_trap`, `gang_voordeur`, `gang_woonkamer` (4) | daylight 15° → 12°, morning 12° → 15° | window, the same schedule | later |
 | Living room mood | `woonkamer_sfeer_no`, `_nw`, `_zo`, `_zw`, `_tv` (100) | daylight 15° → 12°, morning 12° → 15° | none | later |
 | Living room spots | `woonkamer_boekenkast` (90), `woonkamer_spots_wand` (100) | daylight 15° → 12°, morning 12° → 15° | none | later |
-| Office (new) | office lights | fixed 80 % | switch_off 22:00 | yes |
+| Office (new) | `kantoor_voor`, `kantoor_achter` (WW/CW template lights) | fixed 80 % | switch_off, a schedule with a 22:00–24:00 block each day | yes |
 
 - Sleep mode: the sleep-mode blueprint with `input_boolean.nightmode` turns Hallway and both Living room zones off with a 10 s fade; those zones have auto back on at solar noon. The office keeps auto back on off.
 - The office is switched by a trigger-to-zone-action automation (detached Shelly input or door contact → toggle the office zone).

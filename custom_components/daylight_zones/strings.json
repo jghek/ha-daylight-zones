@@ -20,38 +20,45 @@
           "title": "Zone",
           "data": {
             "name": "Name",
-            "lights": "Lights",
+            "lights": "Lights and switches",
             "source": "Darkness source",
             "lux_sensor": "Lux sensor",
             "lux_smoothing": "Lux smoothing",
             "brightness": "Brightness",
             "use_boost": "Dusk boost (daylight brightness only)",
             "use_color_temp": "Colour temperature follows daylight",
-            "off_hours": "Off hours"
+            "off_hours": "Off hours",
+            "off_schedule": "Off-hours schedule (a schedule helper: its blocks are the off hours)"
           }
         },
         "reconfigure": {
           "title": "Zone",
           "data": {
             "name": "Name",
-            "lights": "Lights",
+            "lights": "Lights and switches",
             "source": "Darkness source",
             "lux_sensor": "Lux sensor",
             "lux_smoothing": "Lux smoothing",
             "brightness": "Brightness",
             "use_boost": "Dusk boost (daylight brightness only)",
             "use_color_temp": "Colour temperature follows daylight",
-            "off_hours": "Off hours"
+            "off_hours": "Off hours",
+            "off_schedule": "Off-hours schedule (a schedule helper: its blocks are the off hours)"
           }
         },
         "lights": {
-          "title": "Light limits",
-          "description": "Maximum and minimum brightness per light, as % of its full brightness."
+          "title": "Light settings",
+          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (straight line in between; 0 % is off). On/off: on when the zone level reaches 'threshold'."
+        },
+        "light_types": {
+          "title": "Light types",
+          "description": "Dimmer: brightness follows the zone level. On/off: on above a threshold. Switches are always on/off."
         }
       },
       "error": {
         "light_in_other_zone": "One of these lights already belongs to another zone.",
-        "lux_sensor_required": "Choose a lux sensor, or use the sun as source."
+        "lux_sensor_required": "Choose a lux sensor, or use the sun as source.",
+        "schedule_required": "Choose a schedule helper for the off hours, or set off hours to none."
       },
       "abort": {
         "reconfigure_successful": "Zone updated."
@@ -74,8 +81,14 @@
     "off_hours": {
       "options": {
         "none": "None",
-        "window": "Off and on times: fade to off, come back at the on time",
-        "switch_off": "Off time only: fade out and switch the zone off"
+        "window": "Fade out at the start of each block, back on at its end",
+        "switch_off": "Fade out at the start of a block and switch the zone off"
+      }
+    },
+    "light_type": {
+      "options": {
+        "dimmer": "Dimmer",
+        "on_off": "On/off"
       }
     }
   },

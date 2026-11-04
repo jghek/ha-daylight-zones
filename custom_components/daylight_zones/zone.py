@@ -13,6 +13,7 @@ from astral.sun import elevation, midnight, noon
 
 from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, Context, Event, EventStateChangedData, HomeAssistant, State, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
@@ -21,6 +22,7 @@ from .const import (
     BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_LUX_SENSOR, CONF_LUX_SMOOTHING, CONF_OFF_HOURS, CONF_SOURCE,
     CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, LUX_FLOOR, LUX_STALE_MINUTES, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS, OTHER_SETTINGS,
     OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, OFF_TRANSITION, SOURCE_LUX, STEP_TRANSITION, TIME_SETTINGS, UPDATE_SECONDS,
+    CONF_OFF_SCHEDULE, LIGHT_ON_OFF, ON_OFF_MARGIN, light_settings,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,12 +76,17 @@ class ZoneController:
         self._unsubs: list[CALLBACK_TYPE] = []
         self._listeners: list[Callable[[], None]] = []
         self._started = False
+        self._week: dict[str, list[dict]] = {}
 
     # --- lifecycle -----------------------------------------------------------------------------------------------
 
     @callback
-    def async_start(self) -> None:
+    async def async_start(self) -> None:
+        """Load the off-hours schedule first, so a restart at night never switches lights on for a moment."""
         self._started = True
+        if schedule := self.config.get(CONF_OFF_SCHEDULE):
+            await self._async_load_schedule()
+            self._unsubs.append(async_track_state_change_event(self.hass, [schedule], self._schedule_changed))
         self._unsubs.append(async_track_time_interval(self.hass, self._tick, timedelta(seconds=UPDATE_SECONDS)))
         if self.config[CONF_SOURCE] == SOURCE_LUX and (lux := self.config.get(CONF_LUX_SENSOR)):
             self._unsubs.append(async_track_state_change_event(self.hass, [lux], self._lux_changed))
@@ -153,6 +160,25 @@ class ZoneController:
     def _tick(self, _now: datetime) -> None:
         self.async_update()
 
+    async def _async_load_schedule(self) -> None:
+        """The schedule's blocks per day, through schedule.get_schedule; an unreadable schedule means no off hours."""
+        entity_id = self.config[CONF_OFF_SCHEDULE]
+        try:
+            response = await self.hass.services.async_call("schedule", "get_schedule", {ATTR_ENTITY_ID: entity_id}, blocking=True, return_response=True)
+            self._week = dict((response or {}).get(entity_id) or {})
+        except HomeAssistantError as err:
+            _LOGGER.warning("%s: cannot read off-hours schedule %s: %s", self.name, entity_id, err)
+            self._week = {}
+
+    @callback
+    def _schedule_changed(self, _event: Event[EventStateChangedData]) -> None:
+        """Also fires when the schedule is edited (its next_event changes)."""
+        self.hass.async_create_task(self._async_reload_schedule(), eager_start=True)
+
+    async def _async_reload_schedule(self) -> None:
+        await self._async_load_schedule()
+        self.async_update()
+
     @callback
     def _lux_changed(self, event: Event[EventStateChangedData]) -> None:
         if (value := _number(event.data["new_state"])) is not None:
@@ -199,10 +225,11 @@ class ZoneController:
 
         e, source, caps, curve_pct, curve_phase = self._sun(now)
         hours_pct, hours_phase = 100.0, None
+        blocks = curve.off_blocks(self._week, now)
         if self.config[CONF_OFF_HOURS] == OFF_HOURS_WINDOW:
-            hours_pct, hours_phase = curve.off_window_level(self._off_hours(), now)
+            hours_pct, hours_phase = curve.off_window_level(blocks, now, self.settings["off_fade"])
         elif self.config[CONF_OFF_HOURS] == OFF_HOURS_SWITCH_OFF and self.auto:
-            hours_pct, hours_phase, switch_off = curve.switch_off_level(self._off_hours(), now, self.auto_since)
+            hours_pct, hours_phase, switch_off = curve.switch_off_level(blocks, now, self.auto_since, self.settings["off_fade"])
             if switch_off:
                 self.auto, self.auto_since = False, now
                 self._paused.clear()
@@ -272,41 +299,48 @@ class ZoneController:
             state = self.hass.states.get(entity_id)
             if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 continue
-            pct = curve.light_brightness(level, limits["max"], limits.get("min", 0))
-            on = pct > 0
-            brightness = max(1, round(pct * 2.55)) if on else 0
-            light_k = _clamp_kelvin(state, kelvin)
+            kind, scale, minimum, threshold = light_settings(limits)
+            is_light = entity_id.startswith("light.")
             sent = self._sent.get(entity_id) or Sent(state.state == STATE_ON, _brightness_pct(state), state.attributes.get("color_temp_kelvin"), dt_util.utcnow(), 0)
-            same_brightness = sent.on == on and (not on or max(1, round(sent.pct * 2.55)) == brightness)
+            light_k = _clamp_kelvin(state, kelvin) if is_light else None
+            data: dict[str, Any] = {ATTR_ENTITY_ID: entity_id}
+            if kind == LIGHT_ON_OFF or not is_light:
+                on = curve.on_off(level, threshold, sent.on, ON_OFF_MARGIN)
+                pct, same_level = (100.0 if on else 0.0), sent.on == on
+            else:
+                pct = curve.dimmer_brightness(level, scale, minimum)
+                on = pct > 0
+                brightness = max(1, round(pct * 2.55)) if on else 0
+                pct, same_level = brightness / 2.55, sent.on == on and (not on or max(1, round(sent.pct * 2.55)) == brightness)
+                if on:
+                    data["brightness"] = brightness
             same_kelvin = not on or light_k is None or (sent.kelvin is not None and abs(sent.kelvin - light_k) < COLOR_TEMP_SEND)
-            if same_brightness and same_kelvin:
+            if same_level and same_kelvin:
                 continue  # send only when on/off, the 0-255 brightness value, or the colour temperature changes
-            data: dict[str, Any] = {ATTR_ENTITY_ID: entity_id, "transition": STEP_TRANSITION}
-            if on:
-                data["brightness"] = brightness
-                if light_k is not None:
+            if is_light:
+                data["transition"] = STEP_TRANSITION
+                if on and light_k is not None:
                     data["color_temp_kelvin"] = round(light_k)
-            self._send(entity_id, on, brightness / 2.55, light_k if on else sent.kelvin, data)
+            self._send(entity_id, on, pct, light_k if on else sent.kelvin, data)
 
     def _all_off(self, transition: float) -> None:
         for entity_id in self.lights:
             state = self.hass.states.get(entity_id)
             if state is not None and state.state == STATE_ON:
-                self._send(entity_id, False, 0, None, {ATTR_ENTITY_ID: entity_id, "transition": transition})
+                data: dict[str, Any] = {ATTR_ENTITY_ID: entity_id} | ({"transition": transition} if entity_id.startswith("light.") else {})
+                self._send(entity_id, False, 0, None, data)
 
     def _send(self, entity_id: str, on: bool, pct: float, kelvin: float | None, data: dict[str, Any]) -> None:
         context = Context()
         self._contexts.append(context.id)
-        self._sent[entity_id] = Sent(on, pct, kelvin, dt_util.now(), data["transition"])
-        self.hass.async_create_task(self.hass.services.async_call("light", "turn_on" if on else "turn_off", data, context=context), eager_start=True)
+        self._sent[entity_id] = Sent(on, pct, kelvin, dt_util.now(), data.get("transition", 0))
+        domain = entity_id.split(".", 1)[0]
+        self.hass.async_create_task(self.hass.services.async_call(domain, "turn_on" if on else "turn_off", data, context=context), eager_start=True)
 
     # --- helpers -------------------------------------------------------------------------------------------------
 
     def _observer(self) -> Observer:
         return Observer(self.hass.config.latitude, self.hass.config.longitude)
-
-    def _off_hours(self) -> curve.OffHours:
-        return curve.OffHours(**{k: self.settings[k] for k in ("off_weekday", "on_weekday", "off_weekend", "on_weekend")}, fade=self.settings["off_fade"])
 
     def _color_temp(self) -> curve.ColorTemp:
         s = self.settings

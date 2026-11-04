@@ -86,7 +86,13 @@ def test_example_timeline_3_november():
     assert level(at(-12) + timedelta(minutes=5)) == (60, "cosy")
 
 
-HOURS = curve.OffHours(off_weekday=time(0), on_weekday=time(7), off_weekend=time(2), on_weekend=time(10), fade=30)
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday")
+# The current setup: off 00:00-07:00 on weekdays, 02:00-10:00 at the weekend (by the day after midnight).
+NIGHTS = {day: [{"from": "00:00:00", "to": "07:00:00"}] for day in WEEKDAYS} | {day: [{"from": time(2), "to": time(10)}] for day in ("saturday", "sunday")}
+
+
+def blocks(week, now):
+    return curve.off_blocks(week, now)
 
 
 @pytest.mark.parametrize(("moment", "level", "phase"), [
@@ -102,23 +108,33 @@ HOURS = curve.OffHours(off_weekday=time(0), on_weekday=time(7), off_weekend=time
 ])
 def test_off_window(moment, level, phase):
     now = datetime.fromisoformat(moment).replace(tzinfo=TZ)
-    assert curve.off_window_level(HOURS, now) == pytest.approx((level, phase))
+    assert curve.off_window_level(blocks(NIGHTS, now), now, 30) == pytest.approx((level, phase))
 
 
 def test_off_before_midnight_stays_off():
     """The current templates turn lights back on after the fade when the off time is before midnight."""
-    early = curve.OffHours(off_weekday=time(23), on_weekday=time(7), off_weekend=time(23), on_weekend=time(7), fade=30)
-    assert curve.off_window_level(early, datetime(2026, 11, 2, 23, 45, tzinfo=TZ))[0] == 0
+    early = {day: [{"from": "00:00:00", "to": "07:00:00"}, {"from": "23:00:00", "to": "24:00:00"}] for day in WEEKDAYS + ("saturday", "sunday")}
+    late = datetime(2026, 11, 2, 23, 45, tzinfo=TZ)
+    assert curve.off_window_level(blocks(early, late), late, 30)[0] == 0
+    after_midnight = datetime(2026, 11, 3, 0, 10, tzinfo=TZ)  # 23:00-24:00 and 00:00-07:00 are one block: no new fade at midnight
+    assert curve.off_window_level(blocks(early, after_midnight), after_midnight, 30) == (0, "off_hours")
 
 
-OFFICE = curve.OffHours(off_weekday=time(22), off_weekend=time(22), fade=15)
+def test_off_blocks_merge_and_accept_time_objects():
+    week = {"monday": [{"from": time(22), "to": time.max}], "tuesday": [{"from": time(0), "to": time(6)}]}
+    now = datetime(2026, 11, 2, 23, 0, tzinfo=TZ)
+    assert (datetime(2026, 11, 2, 22, 0, tzinfo=TZ), datetime(2026, 11, 3, 6, 0, tzinfo=TZ)) in curve.off_blocks(week, now)
+
+
+OFFICE = {day: [{"from": "22:00:00", "to": "24:00:00"}] for day in WEEKDAYS + ("saturday", "sunday")}
 
 
 def test_next_off_is_the_first_off_moment_after_switching_on():
     at = lambda moment: datetime.fromisoformat(moment).replace(tzinfo=TZ)
-    assert curve.next_off(OFFICE, at("2026-11-04 08:30")) == at("2026-11-04 22:00")
-    assert curve.next_off(OFFICE, at("2026-11-04 23:10")) == at("2026-11-05 22:00")  # working late: not switched off again tonight
-    assert curve.next_off(HOURS, at("2026-11-04 08:30")) == at("2026-11-05 00:00")  # weekday off time after midnight
+    assert curve.next_off(blocks(OFFICE, at("2026-11-04 08:30")), at("2026-11-04 08:30")) == at("2026-11-04 22:00")
+    assert curve.next_off(blocks(OFFICE, at("2026-11-04 23:10")), at("2026-11-04 23:10")) == at("2026-11-05 22:00")  # working late: not again tonight
+    assert curve.next_off(blocks(NIGHTS, at("2026-11-04 08:30")), at("2026-11-04 08:30")) == at("2026-11-05 00:00")
+    assert curve.next_off([], at("2026-11-04 08:30")) is None
 
 
 @pytest.mark.parametrize(("moment", "level", "phase", "switch_off"), [
@@ -128,12 +144,13 @@ def test_next_off_is_the_first_off_moment_after_switching_on():
 ])
 def test_switch_off(moment, level, phase, switch_off):
     now = datetime.fromisoformat(moment).replace(tzinfo=TZ)
-    assert curve.switch_off_level(OFFICE, now, datetime(2026, 11, 4, 8, 30, tzinfo=TZ)) == pytest.approx((level, phase, switch_off), abs=0.01)
+    assert curve.switch_off_level(blocks(OFFICE, now), now, datetime(2026, 11, 4, 8, 30, tzinfo=TZ), 15) == pytest.approx((level, phase, switch_off), abs=0.01)
 
 
 def test_switch_off_after_working_late_waits_for_tomorrow():
     switched_on = datetime(2026, 11, 4, 23, 10, tzinfo=TZ)
-    assert curve.switch_off_level(OFFICE, datetime(2026, 11, 4, 23, 30, tzinfo=TZ), switched_on) == (100, None, False)
+    now = datetime(2026, 11, 4, 23, 30, tzinfo=TZ)
+    assert curve.switch_off_level(blocks(OFFICE, now), now, switched_on, 15) == (100, None, False)
 
 
 CT = curve.ColorTemp(day=5000, dusk=3500, night=2400, day_elevation=20, night_elevation=-8)
@@ -150,10 +167,26 @@ def test_base_level_off_hours_phase_wins_while_dimming():
     assert curve.base_level(80, "on", 100, None) == (80, "on")
 
 
-def test_light_brightness():
-    assert curve.light_brightness(60, 50, 0) == 30
-    assert curve.light_brightness(1, 50, 5) == 5
-    assert curve.light_brightness(0, 50, 5) == 0
+def test_dimmer_is_linear_from_min_to_scale():
+    assert curve.dimmer_brightness(60, 50, 0) == 30
+    assert curve.dimmer_brightness(100, 40, 10) == 40
+    assert curve.dimmer_brightness(50, 40, 10) == 25
+    assert curve.dimmer_brightness(1, 40, 10) == pytest.approx(10.3)
+    assert curve.dimmer_brightness(0, 40, 10) == 0
+
+
+def test_on_off_threshold_with_margin():
+    assert curve.on_off(30, 30, False, 2)
+    assert not curve.on_off(29, 30, False, 2)
+    assert curve.on_off(29, 30, True, 2)  # within the margin: stays on
+    assert not curve.on_off(27.9, 30, True, 2)
+    assert not curve.on_off(0, 0, True, 2)
+
+
+def test_light_settings_read_the_older_format():
+    from custom_components.daylight_zones.const import light_settings
+    assert light_settings({"max": 40, "min": 5}) == ("dimmer", 40, 5, 50)
+    assert light_settings({"type": "on_off", "threshold": 20}) == ("on_off", 100, 0, 20)
 
 
 # --- 1:1 comparison with the current template sensors -------------------------------------------------------------
@@ -193,4 +226,4 @@ def test_schedule_matches_templates_over_a_week():
     start = datetime(2026, 11, 2, tzinfo=TZ)  # Monday
     for minute in range(0, 7 * 24 * 60, 5):
         now = start + timedelta(minutes=minute)
-        assert curve.off_window_level(HOURS, now)[0] == pytest.approx(100 * old_time_factor(now), abs=1e-6), now
+        assert curve.off_window_level(blocks(NIGHTS, now), now, 30)[0] == pytest.approx(100 * old_time_factor(now), abs=1e-6), now

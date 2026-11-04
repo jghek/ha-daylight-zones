@@ -2,15 +2,27 @@
 
 from typing import Any
 
+from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
 
-LIGHTS = {"light.a": {"max": 50, "min": 0}, "light.b": {"max": 100, "min": 10}}
-ZONE = {"lights": LIGHTS, "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": True, "use_color_temp": False, "off_hours": "window"}
-OFFICE = {"lights": {"light.desk": {"max": 100, "min": 0}, "light.plain": {"max": 100, "min": 0}}, "source": "sun", "lux_smoothing": 10, "brightness": "fixed",
-          "use_boost": False, "use_color_temp": True, "off_hours": "switch_off"}
+LIGHTS = {"light.a": {"type": "dimmer", "scale": 50, "min": 0}, "light.b": {"type": "dimmer", "scale": 100, "min": 10}}
+ZONE = {"lights": LIGHTS, "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": True, "use_color_temp": False, "off_hours": "window", "off_schedule": "schedule.nights"}
+OFFICE = {"lights": {"light.desk": {"type": "dimmer", "scale": 100, "min": 0}, "light.plain": {"type": "dimmer", "scale": 100, "min": 0}}, "source": "sun", "lux_smoothing": 10,
+          "brightness": "fixed", "use_boost": False, "use_color_temp": True, "off_hours": "switch_off", "off_schedule": "schedule.office_off"}
+WEEK = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+SCHEDULES = {
+    # the current setup: weekdays 00:00-07:00, weekend 02:00-10:00
+    "nights": {"name": "Nights"} | {day: [{"from": "00:00:00", "to": "07:00:00"}] for day in WEEK[:5]} | {day: [{"from": "02:00:00", "to": "10:00:00"}] for day in WEEK[5:]},
+    "office_off": {"name": "Office off"} | {day: [{"from": "22:00:00", "to": "24:00:00"}] for day in WEEK},
+}
+
+
+def dimmer(level: float, scale: float, minimum: float) -> int:
+    """The brightness value a dimmer gets for a zone level."""
+    return round((minimum + level * (scale - minimum) / 100) * 2.55)
 CT_LIGHT = {"supported_color_modes": ["color_temp"], "min_color_temp_kelvin": 2700, "max_color_temp_kelvin": 6500}
 
 
@@ -20,10 +32,17 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 
 @pytest.fixture
+def expected_lingering_timers() -> bool:
+    """The schedule helper used for off hours keeps its own timers for its next block."""
+    return True
+
+
+@pytest.fixture
 async def home(hass, freezer):
     hass.config.latitude, hass.config.longitude = 52.0, 5.0
     await hass.config.async_set_time_zone("Europe/Amsterdam")
     freezer.move_to("2026-11-03 19:00:00+01:00")  # Tuesday evening, sun about -21°: cosy
+    assert await async_setup_component(hass, "schedule", {"schedule": SCHEDULES})
     for light in LIGHTS:
         hass.states.async_set(light, "off")
     hass.states.async_set("light.desk", "off", CT_LIGHT)

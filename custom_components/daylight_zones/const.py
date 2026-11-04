@@ -15,10 +15,12 @@ CONF_BRIGHTNESS = "brightness"
 CONF_USE_BOOST = "use_boost"
 CONF_USE_COLOR_TEMP = "use_color_temp"
 CONF_OFF_HOURS = "off_hours"
+CONF_OFF_SCHEDULE = "off_schedule"
 
 SOURCE_SUN, SOURCE_LUX = "sun", "lux"
 BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED = "daylight", "fixed"
 OFF_HOURS_NONE, OFF_HOURS_WINDOW, OFF_HOURS_SWITCH_OFF = "none", "window", "switch_off"
+LIGHT_DIMMER, LIGHT_ON_OFF = "dimmer", "on_off"
 UNTIL = ["next_phase", "noon", "duration"]
 BACK_ON_AT = ["noon", "time"]
 # Settings that are neither numbers nor times: (key, default)
@@ -29,6 +31,7 @@ UPDATE_SECONDS = 60
 STEP_TRANSITION = 2  # seconds, for normal level steps
 OFF_TRANSITION = 10  # seconds, when the auto switch turns the lights off
 MANUAL_TOLERANCE = 3  # % brightness difference that still counts as our own command
+ON_OFF_MARGIN = 2  # % below the threshold before an on/off light switches off again
 MANUAL_TOLERANCE_K = 150  # kelvin
 COLOR_TEMP_STEP = 100  # most kelvin a light's colour temperature moves per minute
 COLOR_TEMP_SEND = 50  # least kelvin change worth a command
@@ -71,10 +74,6 @@ NUMBER_SETTINGS = (
 
 TIME_SETTINGS = (
     ("auto_back_on_time", "Auto back on time", time(12), None),
-    ("off_weekday", "Off weekday", time(0), "off_hours"),
-    ("on_weekday", "On weekday", time(7), "window"),
-    ("off_weekend", "Off weekend", time(2), "off_hours"),
-    ("on_weekend", "On weekend", time(10), "window"),
 )
 
 
@@ -89,5 +88,9 @@ def setting_used(needs: str | None, zone: dict) -> bool:
         "elevation": daylight or zone[CONF_USE_COLOR_TEMP],
         "color_temp": zone[CONF_USE_COLOR_TEMP],
         "off_hours": zone[CONF_OFF_HOURS] != OFF_HOURS_NONE,
-        "window": zone[CONF_OFF_HOURS] == OFF_HOURS_WINDOW,
     }[needs]
+
+
+def light_settings(limits: dict) -> tuple[str, float, float, float]:
+    """(type, scale, min, threshold) for one light; reads the older max/min format too."""
+    return limits.get("type", LIGHT_DIMMER), limits.get("scale", limits.get("max", 100)), limits.get("min", 0), limits.get("threshold", 50)
