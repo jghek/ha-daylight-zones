@@ -113,6 +113,12 @@ def test_off_before_midnight_stays_off():
     assert curve.off_window_level(blocks(early, after_midnight), after_midnight, 30) == (0, "off_hours")
 
 
+def test_off_blocks_accept_the_api_notation_for_midnight():
+    week = {"monday": [{"from": "22:00:00", "to": "23:59:59.999999"}], "tuesday": [{"from": "00:00:00", "to": "06:00:00"}]}
+    now = datetime(2026, 11, 2, 23, 0, tzinfo=TZ)
+    assert (datetime(2026, 11, 2, 22, 0, tzinfo=TZ), datetime(2026, 11, 3, 6, 0, tzinfo=TZ)) in curve.off_blocks(week, now)
+
+
 def test_off_blocks_merge_and_accept_time_objects():
     week = {"monday": [{"from": time(22), "to": time.max}], "tuesday": [{"from": time(0), "to": time(6)}]}
     now = datetime(2026, 11, 2, 23, 0, tzinfo=TZ)

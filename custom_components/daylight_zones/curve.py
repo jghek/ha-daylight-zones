@@ -118,7 +118,7 @@ def _as_time(value) -> time | None:
     if isinstance(value, time):
         return None if value == time.max else value
     text = str(value)
-    return None if text.startswith("24:00") else time.fromisoformat(text)
+    return None if text.startswith(("24:00", "23:59:59.999")) else time.fromisoformat(text)  # the schedule helper reports 24:00 as 23:59:59.999999 over its API
 
 
 def off_blocks(week: dict[str, list[dict]], around: datetime, days: int = 8) -> list[tuple[datetime, datetime]]:
