@@ -7,8 +7,6 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 import math
 
-# Approximate clear-sky horizontal illuminance by solar elevation (design §3.2).
-LUX_TABLE = ((-18.0, 0.0007), (-12.0, 0.008), (-6.0, 3.4), (0.0, 600.0), (5.0, 5500.0), (10.0, 16000.0), (20.0, 38000.0), (30.0, 55000.0), (60.0, 100000.0))
 CAP_MARGIN = 1.0
 
 
@@ -42,16 +40,6 @@ def season(day: date) -> float:
 
 def effective_elevation(elevation: float, winter_bias: float, day: date) -> float:
     return elevation - winter_bias * season(day)
-
-
-def elevation_from_lux(lux: float) -> float:
-    """Elevation at which a clear sky gives this illuminance (log-linear in LUX_TABLE, clamped to its ends)."""
-    if lux <= LUX_TABLE[0][1]:
-        return LUX_TABLE[0][0]
-    for (e0, l0), (e1, l1) in zip(LUX_TABLE, LUX_TABLE[1:], strict=False):
-        if lux <= l1:
-            return e0 + (e1 - e0) * (math.log10(lux) - math.log10(l0)) / (math.log10(l1) - math.log10(l0))
-    return LUX_TABLE[-1][0]
 
 
 def _lerp(x: float, x0: float, x1: float, y0: float, y1: float) -> float:

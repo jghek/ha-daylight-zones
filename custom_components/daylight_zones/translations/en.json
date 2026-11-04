@@ -21,9 +21,6 @@
           "data": {
             "name": "Name",
             "lights": "Lights and switches",
-            "source": "Darkness source",
-            "lux_sensor": "Lux sensor",
-            "lux_smoothing": "Lux smoothing",
             "brightness": "Brightness",
             "use_boost": "Dusk boost (daylight brightness only)",
             "use_color_temp": "Colour temperature follows daylight",
@@ -36,9 +33,6 @@
           "data": {
             "name": "Name",
             "lights": "Lights and switches",
-            "source": "Darkness source",
-            "lux_sensor": "Lux sensor",
-            "lux_smoothing": "Lux smoothing",
             "brightness": "Brightness",
             "use_boost": "Dusk boost (daylight brightness only)",
             "use_color_temp": "Colour temperature follows daylight",
@@ -57,7 +51,6 @@
       },
       "error": {
         "light_in_other_zone": "One of these lights already belongs to another zone.",
-        "lux_sensor_required": "Choose a lux sensor, or use the sun as source.",
         "schedule_required": "Choose a schedule helper for the off hours, or set off hours to none."
       },
       "abort": {
@@ -66,12 +59,6 @@
     }
   },
   "selector": {
-    "source": {
-      "options": {
-        "sun": "Sun position",
-        "lux": "Lux sensor (sun position as fallback)"
-      }
-    },
     "brightness": {
       "options": {
         "daylight": "Follows daylight (evening ramp, optional boost, cosy, morning ramp)",

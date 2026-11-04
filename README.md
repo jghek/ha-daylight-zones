@@ -6,7 +6,6 @@ off hours fade lights out at night, and every zone has an **auto** switch (follo
 - Brightness follows daylight (on earlier in winter, a brighter boost at dusk, a slow settle to a cosy level), or stays at a fixed level.
 - Colour temperature follows daylight: cool by day, warmer at dusk, warmest at night. Only for lights that support it.
 - Off hours: fade out at an off time and come back at an on time, or fade out and switch the zone off.
-- Uses the sun position, or a lux sensor if you have one.
 - A light you change by hand is left alone until the zone's next phase.
 - Blueprints: run a zone action from any trigger (button, detached switch input, door contact), and turn zones off with sleep mode.
 

@@ -9,8 +9,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
 
 LIGHTS = {"light.a": {"type": "dimmer", "scale": 50, "min": 0}, "light.b": {"type": "dimmer", "scale": 100, "min": 10}}
-ZONE = {"lights": LIGHTS, "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": True, "use_color_temp": False, "off_hours": "window", "off_schedule": "schedule.nights"}
-OFFICE = {"lights": {"light.desk": {"type": "dimmer", "scale": 100, "min": 0}, "light.plain": {"type": "dimmer", "scale": 100, "min": 0}}, "source": "sun", "lux_smoothing": 10,
+ZONE = {"lights": LIGHTS, "brightness": "daylight", "use_boost": True, "use_color_temp": False, "off_hours": "window", "off_schedule": "schedule.nights"}
+OFFICE = {"lights": {"light.desk": {"type": "dimmer", "scale": 100, "min": 0}, "light.plain": {"type": "dimmer", "scale": 100, "min": 0}},
           "brightness": "fixed", "use_boost": False, "use_color_temp": True, "off_hours": "switch_off", "off_schedule": "schedule.office_off"}
 WEEK = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 SCHEDULES = {

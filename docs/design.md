@@ -11,7 +11,7 @@ helpers and a script that runs every minute.
 Goals:
 
 - Zones that may be a room, part of a room, or span several rooms. Each zone is configured on its own.
-- One darkness axis per zone, the **effective elevation**, fed by the sun position or a lux sensor.
+- One darkness axis per zone, the **effective elevation**, from the sun position.
 - Brightness that follows daylight (on earlier in winter, a boost at dusk while eyes are still used to daylight, a slow
   settle to a cosy level), or a fixed level.
 - Colour temperature that follows daylight: cool by day, warmer at dusk, warmest at night.
@@ -31,7 +31,7 @@ Non-goals:
 | Term | Meaning |
 |---|---|
 | Zone | A group of lights with one set of settings. One config subentry, one HA device. A light belongs to at most one zone. |
-| Effective elevation (E) | The darkness axis, in degrees: the real solar elevation shifted by season, or derived from a lux sensor (§3). |
+| Effective elevation (E) | The darkness axis, in degrees: the real solar elevation shifted by season (§3). |
 | Auto | Switch. On: the zone follows the sun and manages its lights. Off: lights off, and the zone leaves them alone. |
 | Auto back on | Setting. When on, auto switches itself back on at the first solar noon or set time after it went off, however it went off. |
 | Override | Switch. On: the zone's lights at the override level, also when auto is off. Ends when switched off, at the latest the next solar noon. |
@@ -43,7 +43,7 @@ Non-goals:
 
 ## 3. Effective elevation
 
-### 3.1 Source: sun model (default)
+### 3.1 Sun model
 
 The integration computes the real solar elevation `e` itself every minute (astral, HA's location).
 The season term `s` runs from −1 at the June solstice to +1 at the December solstice, following the solar declination δ:
@@ -55,30 +55,7 @@ E = e − winter_bias × s
 
 With `winter_bias = 3°` the effective sun is 3° lower in December (lights on earlier, colour warmer) and 3° higher in June.
 
-### 3.2 Source: lux sensor (optional)
-
-A lux sensor facing the sky (outside, or behind a window that none of the zone's lights can reach).
-The measured lux is smoothed (mean of log10 over a window, default 10 min) and converted to the elevation at which a
-clear sky gives that much light, by log-linear interpolation in this table:
-
-| Elevation | Clear-sky horizontal illuminance (approx.) |
-|---|---|
-| −18° | 0.0007 lx |
-| −12° | 0.008 lx |
-| −6° | 3.4 lx |
-| 0° | 600 lx |
-| 5° | 5 500 lx |
-| 10° | 16 000 lx |
-| 20° | 38 000 lx |
-| 30° | 55 000 lx |
-| 60° | 100 000 lx |
-
-The table is approximate and gets calibrated once a sensor is installed. On an overcast afternoon of 2 000 lx, E ≈ 2.7°
-while the real sun may be at 15°: lights and colour react to the actual darkness. `winter_bias` still applies (usually 0 with a sensor).
-
-Fallbacks: below 1 lx, or with no reading for 10 min, the sun model is used. E is never higher than the sun model (a sensor in direct sun).
-
-### 3.3 Reachability caps
+### 3.2 Reachability caps
 
 At 52°N the sun reaches only 14.7° on 21 December, and only gets down to about −14.5° in June. Each day the integration
 computes the day's highest and lowest E; brightness thresholds above `highest − 1°` or below `lowest + 1°` are shifted
@@ -139,7 +116,6 @@ Follows E with three points: `ct_night` at `ct_night_elevation` and below, `ct_d
 | ≤ −8° | 2400 K |
 
 - With daylight brightness, the boost at dusk is automatically cooler and the settle warmer: one story for brightness and colour.
-- With a lux sensor, a grey day gives a warmer colour.
 - Only lights whose `supported_color_modes` include `color_temp` get a colour temperature, clamped to their own
   `min_color_temp_kelvin`/`max_color_temp_kelvin`. Other lights in the zone get brightness only.
 - Colour temperature moves at most 100 K per minute; a command is sent when it differs 50 K or more from the last one sent.
@@ -207,12 +183,12 @@ flowchart TD
 - Colour temperature is only sent to lights (not switches) that support it (§5).
 - A command is only sent when on/off, the light's 0–255 brightness value, or its colour temperature (§5) changes. Measuring in brightness values
   keeps dim lights smooth: a light with a 4 % maximum has only about 10 values. Normal steps use a 2 s transition.
-- **Rate limit**: the zone level moves at most `max_step` % per minute (default 5 %), so a passing cloud never makes lights jump.
+- **Rate limit**: the zone level moves at most `max_step` % per minute (default 5 %), so a changed setting moves the lights gradually. The limit applies to the zone level, so each light moves in proportion to its own range: a dimmer with scale 40 % moves at most 2 % of its full brightness per minute at the default.
   Switching auto or override bypasses the limit.
 - **Manual change detection**: a change of a light's state, brightness or colour temperature whose context did not come from the integration
   pauses that light until the zone's next phase, or until auto or override switches. Not counted as manual: becoming unavailable and available again,
   a report within the transition time + 5 s after the integration's own command, or one that matches the command (3 %, 150 K).
-- Recalculation every 60 s, and immediately on a change of a switch, a setting, or the lux sensor.
+- Recalculation every 60 s, and immediately on a change of a switch, a setting, or the off-hours schedule.
 
 ## 9. Actions, events and blueprints
 
@@ -246,7 +222,6 @@ All take `zone`: one or more zone devices.
 |---|---|
 | Name | text |
 | Lights and switches | `light.*` and `switch.*` entities; then per light the type (`dimmer` / `on_off`), then `scale` and `min` % for dimmers or `threshold` % for on/off (shown with the friendly names) |
-| Darkness source | `sun`, or `lux` + lux sensor + smoothing minutes |
 | Brightness | `daylight` / `fixed` |
 | Dusk boost | yes/no (daylight only) |
 | Colour temperature follows daylight | yes/no |
@@ -263,7 +238,7 @@ Entities for settings a zone does not use are not created.
 | `select.<zone>_auto_back_on_at` | `noon` / `time` | always | `noon` (solar noon) |
 | `time.<zone>_auto_back_on_time` | time | always | 12:00 |
 | `switch.<zone>_override` | | always | off; attribute `until` |
-| `sensor.<zone>_level` | % | always | attributes: phase, curve level, off-hours level, effective elevation, source, caps, auto, override, paused lights |
+| `sensor.<zone>_level` | % | always | attributes: phase, curve level, off-hours level, effective elevation, caps, auto, override, paused lights |
 | `sensor.<zone>_phase` | enum | always | `cosy` |
 | `sensor.<zone>_effective_elevation` (diagnostic) | ° | always | −13.2 |
 | `sensor.<zone>_colour_temperature` | K | colour temperature | 2400 |
@@ -289,7 +264,7 @@ Settings, the auto switch and the override switch survive restarts. The moment a
 - `zone.py`: one controller per zone: timer, listeners, switches, rate limits, manual-change detection, sending commands.
 - Platforms: `sensor`, `number`, `time`, `switch`.
 - Tests:
-  - `curve.py` against the timelines in §4.1 and §6, the caps in §3.3, colour temperature, and off hours including working late;
+  - `curve.py` against the timelines in §4.1 and §6, the caps in §3.2, colour temperature, and off hours including working late;
   - a comparison with the replaced template formulas over a full year (sun factor) and a week (off hours);
   - controller tests with fake lights: auto and override, fixed brightness, colour temperature and clamping, manual pauses (brightness and colour), switch-off, rate limit, restarts;
   - an end-to-end run of 26 hours minute by minute against the replaced script: at most 1 brightness value apart, 20 commands instead of 1 560;
@@ -324,8 +299,10 @@ Known issues in the current setup that this fixes:
 - An indoor off threshold of 15° is never reached around December; the lights stay dimmed on all day.
 - Equal on and off elevations divide by zero.
 
-## 13. Open questions
+## 13. Decided
 
-- Q-001: Calibrate the lux table (§3.2) once a sensor is installed. Which sensor, and where?
-- Q-002: Should a zone skip switching on in the morning when the level would stay below a set %? (the short 07:00–07:42 burst in §6, November)
-- Q-003: Default `max_step` of 5 %/min: slow enough to be invisible, fast enough for the evening ramp (21 June goes 0 → 100 % in 21 min, about 4.8 %/min)?
+- Q-001 (2026-11-04): no lux sensor for now; the zones use the sun model only. A lux source (a sky-facing sensor converted to an
+  equivalent elevation) can be added later; the earlier version is in the git history.
+- Q-002 (2026-11-04): a zone does not skip a short morning switch-on (§6, the 07:00–07:42 case in November): the light helps when leaving early.
+- Q-003 (2026-11-04): `max_step` is a zone setting (`number.<zone>_maximum_step`, 1–100 %/min), default 5 %/min. It is enough for the fastest
+  evening ramp (21 June, 0 → 100 % in 21 min, about 4.8 %/min) and scales per light with its range (§8).

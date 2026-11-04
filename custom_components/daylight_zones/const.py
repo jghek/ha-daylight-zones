@@ -8,16 +8,12 @@ SUBENTRY_ZONE = "zone"
 EVENT_PHASE_CHANGED = "daylight_zones_phase_changed"
 
 CONF_LIGHTS = "lights"
-CONF_SOURCE = "source"
-CONF_LUX_SENSOR = "lux_sensor"
-CONF_LUX_SMOOTHING = "lux_smoothing"
 CONF_BRIGHTNESS = "brightness"
 CONF_USE_BOOST = "use_boost"
 CONF_USE_COLOR_TEMP = "use_color_temp"
 CONF_OFF_HOURS = "off_hours"
 CONF_OFF_SCHEDULE = "off_schedule"
 
-SOURCE_SUN, SOURCE_LUX = "sun", "lux"
 BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED = "daylight", "fixed"
 OFF_HOURS_NONE, OFF_HOURS_WINDOW, OFF_HOURS_SWITCH_OFF = "none", "window", "switch_off"
 LIGHT_DIMMER, LIGHT_ON_OFF = "dimmer", "on_off"
@@ -35,8 +31,6 @@ ON_OFF_MARGIN = 2  # % below the threshold before an on/off light switches off a
 MANUAL_TOLERANCE_K = 150  # kelvin
 COLOR_TEMP_STEP = 100  # most kelvin a light's colour temperature moves per minute
 COLOR_TEMP_SEND = 50  # least kelvin change worth a command
-LUX_FLOOR = 1.0  # lx; below this the sun model is used
-LUX_STALE_MINUTES = 10
 
 
 @dataclass(frozen=True)

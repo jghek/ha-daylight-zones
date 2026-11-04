@@ -34,7 +34,7 @@ class LevelSensor(ZoneEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         s = self.zone.snapshot
-        return {"phase": s.phase, "curve_level": s.curve_level, "off_hours_level": s.off_hours_level, "effective_elevation": s.effective_elevation, "source": s.source,
+        return {"phase": s.phase, "curve_level": s.curve_level, "off_hours_level": s.off_hours_level, "effective_elevation": s.effective_elevation,
                 "caps_active": s.caps_active, "auto": self.zone.auto, "override": self.zone.override, "paused_lights": self.zone.paused_lights}
 
 

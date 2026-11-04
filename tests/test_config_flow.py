@@ -5,7 +5,7 @@ from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
 
 from .conftest import setup_zone
 
-ZONE_FORM = {"name": "Hallway", "lights": ["light.c"], "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": False, "use_color_temp": False, "off_hours": "window",
+ZONE_FORM = {"name": "Hallway", "lights": ["light.c"], "brightness": "daylight", "use_boost": False, "use_color_temp": False, "off_hours": "window",
              "off_schedule": "schedule.nights"}
 
 
@@ -37,13 +37,6 @@ async def test_light_can_only_be_in_one_zone(home, calls):
     result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
     result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM | {"lights": ["light.a"]})
     assert result["errors"] == {"lights": "light_in_other_zone"}
-
-
-async def test_lux_source_needs_a_sensor(home, calls):
-    entry = await setup_zone(home)
-    result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM | {"source": "lux"})
-    assert result["errors"] == {"lux_sensor": "lux_sensor_required"}
 
 
 async def test_reconfigure_keeps_own_lights(home, calls):

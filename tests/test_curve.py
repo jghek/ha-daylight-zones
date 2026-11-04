@@ -24,13 +24,6 @@ def test_winter_bias_lowers_effective_sun_in_winter():
     assert curve.effective_elevation(10, 3, date(2026, 6, 21)) == pytest.approx(13, abs=0.05)
 
 
-def test_elevation_from_lux():
-    assert curve.elevation_from_lux(2000) == pytest.approx(2.7, abs=0.05)
-    assert curve.elevation_from_lux(600) == pytest.approx(0)
-    assert curve.elevation_from_lux(0) == -18
-    assert curve.elevation_from_lux(1e6) == 60
-
-
 BOOST = curve.Curve(evening_start=15, evening_full=12, boost=True, peak=100, hold_until=-6, settle_end=-12, cosy=60, morning_start=12, morning_off=15)
 
 

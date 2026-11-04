@@ -9,8 +9,8 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
-    BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_LUX_SENSOR, CONF_LUX_SMOOTHING, CONF_OFF_HOURS, CONF_SOURCE, CONF_USE_BOOST,
-    CONF_USE_COLOR_TEMP, DOMAIN, OFF_HOURS_NONE, OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, SOURCE_LUX, SOURCE_SUN, SUBENTRY_ZONE,
+    BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_OFF_HOURS, CONF_USE_BOOST,
+    CONF_USE_COLOR_TEMP, DOMAIN, OFF_HOURS_NONE, OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, SUBENTRY_ZONE,
     CONF_OFF_SCHEDULE, LIGHT_DIMMER, LIGHT_ON_OFF, light_settings,
 )
 
@@ -55,8 +55,6 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             taken = self._lights_in_other_zones()
             if any(light in taken for light in lights):
                 errors[CONF_LIGHTS] = "light_in_other_zone"
-            elif user_input[CONF_SOURCE] == SOURCE_LUX and not user_input.get(CONF_LUX_SENSOR):
-                errors[CONF_LUX_SENSOR] = "lux_sensor_required"
             elif user_input[CONF_OFF_HOURS] != OFF_HOURS_NONE and not user_input.get(CONF_OFF_SCHEDULE):
                 errors[CONF_OFF_SCHEDULE] = "schedule_required"
             else:
@@ -68,9 +66,6 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         schema = vol.Schema({
             vol.Required("name", default=title): str,
             vol.Required(CONF_LIGHTS, default=list(current.get(CONF_LIGHTS, {}))): selector.EntitySelector(selector.EntitySelectorConfig(domain=["light", "switch"], multiple=True)),
-            vol.Required(CONF_SOURCE, default=current.get(CONF_SOURCE, SOURCE_SUN)): selector.SelectSelector(selector.SelectSelectorConfig(options=[SOURCE_SUN, SOURCE_LUX], translation_key="source")),
-            vol.Optional(CONF_LUX_SENSOR, description={"suggested_value": current.get(CONF_LUX_SENSOR)}): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class="illuminance")),
-            vol.Required(CONF_LUX_SMOOTHING, default=current.get(CONF_LUX_SMOOTHING, 10)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=60, step=1, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX)),
             vol.Required(CONF_BRIGHTNESS, default=current.get(CONF_BRIGHTNESS, BRIGHTNESS_DAYLIGHT)): selector.SelectSelector(selector.SelectSelectorConfig(options=[BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED], translation_key="brightness")),
             vol.Required(CONF_USE_BOOST, default=current.get(CONF_USE_BOOST, False)): bool,
             vol.Required(CONF_USE_COLOR_TEMP, default=current.get(CONF_USE_COLOR_TEMP, False)): bool,

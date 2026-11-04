@@ -5,7 +5,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
-import math
 from typing import Any
 
 from astral import Observer
@@ -19,9 +18,9 @@ from homeassistant.util import dt as dt_util
 
 from . import curve
 from .const import (
-    BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_LUX_SENSOR, CONF_LUX_SMOOTHING, CONF_OFF_HOURS, CONF_SOURCE,
-    CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, LUX_FLOOR, LUX_STALE_MINUTES, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS, OTHER_SETTINGS,
-    OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, OFF_TRANSITION, SOURCE_LUX, STEP_TRANSITION, TIME_SETTINGS, UPDATE_SECONDS,
+    BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_OFF_HOURS,
+    CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS, OTHER_SETTINGS,
+    OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, OFF_TRANSITION, STEP_TRANSITION, TIME_SETTINGS, UPDATE_SECONDS,
     CONF_OFF_SCHEDULE, LIGHT_ON_OFF, ON_OFF_MARGIN, light_settings,
 )
 
@@ -46,7 +45,6 @@ class Snapshot:
     effective_elevation: float | None = None
     curve_level: float | None = None
     off_hours_level: float | None = None
-    source: str = "sun"
     caps_active: bool = False
 
 
@@ -66,7 +64,6 @@ class ZoneController:
         self._paused: dict[str, str] = {}  # light -> base phase when paused
         self._sent: dict[str, Sent] = {}
         self._contexts: deque[str] = deque(maxlen=100)
-        self._lux: deque[tuple[datetime, float]] = deque()
         self._level: float | None = None
         self._kelvin: float | None = None
         self._last_kind: str | None = None
@@ -88,8 +85,6 @@ class ZoneController:
             await self._async_load_schedule()
             self._unsubs.append(async_track_state_change_event(self.hass, [schedule], self._schedule_changed))
         self._unsubs.append(async_track_time_interval(self.hass, self._tick, timedelta(seconds=UPDATE_SECONDS)))
-        if self.config[CONF_SOURCE] == SOURCE_LUX and (lux := self.config.get(CONF_LUX_SENSOR)):
-            self._unsubs.append(async_track_state_change_event(self.hass, [lux], self._lux_changed))
         self._unsubs.append(async_track_state_change_event(self.hass, list(self.lights), self._light_changed))
         self.async_update()
 
@@ -180,12 +175,6 @@ class ZoneController:
         self.async_update()
 
     @callback
-    def _lux_changed(self, event: Event[EventStateChangedData]) -> None:
-        if (value := _number(event.data["new_state"])) is not None:
-            self._lux.append((dt_util.now(), value))
-        self.async_update()
-
-    @callback
     def _light_changed(self, event: Event[EventStateChangedData]) -> None:
         """Pause a light that somebody else changed, until the zone's next phase (or until auto or override toggles)."""
         entity_id, old, new = event.data["entity_id"], event.data["old_state"], event.data["new_state"]
@@ -223,7 +212,7 @@ class ZoneController:
             if not self.auto:
                 self._all_off(OFF_TRANSITION)
 
-        e, source, caps, curve_pct, curve_phase = self._sun(now)
+        e, caps, curve_pct, curve_phase = self._sun(now)
         hours_pct, hours_phase = 100.0, None
         blocks = curve.off_blocks(self._week, now)
         if self.config[CONF_OFF_HOURS] == OFF_HOURS_WINDOW:
@@ -252,28 +241,25 @@ class ZoneController:
             self._drive(self._level, self._kelvin)
 
         old_phase = self.snapshot.phase
-        self.snapshot = Snapshot(self._level if target is not None else None, self._kelvin, phase, round(e, 2), round(curve_pct, 1), round(hours_pct, 1), source, caps)
+        self.snapshot = Snapshot(self._level if target is not None else None, self._kelvin, phase, round(e, 2), round(curve_pct, 1), round(hours_pct, 1), caps)
         if old_phase != phase and self._last_run is not None:
             self.hass.bus.async_fire(EVENT_PHASE_CHANGED, {"zone": self.name, "zone_id": self.subentry_id, "from": old_phase, "to": phase})
         self._last_run = now
         self._notify()
 
-    def _sun(self, now: datetime) -> tuple[float, str, bool, float, str]:
-        """Effective elevation, its source, whether caps are active, and the brightness curve level and phase."""
+    def _sun(self, now: datetime) -> tuple[float, bool, float, str]:
+        """Effective elevation, whether caps are active, and the brightness curve level and phase."""
         day = now.date()
         observer = self._observer()
         noon_at, highest, lowest = self._day_extremes(observer, day)
         bias = self.settings["winter_bias"]
-        e = model = curve.effective_elevation(elevation(observer, now), bias, day)
-        source = "sun"
-        if self.config[CONF_SOURCE] == SOURCE_LUX and (lux := self._lux_mean(now)) is not None:
-            e, source = min(curve.effective_elevation(curve.elevation_from_lux(lux), bias, day), model), "lux"
+        e = curve.effective_elevation(elevation(observer, now), bias, day)
         if self.config[CONF_BRIGHTNESS] != BRIGHTNESS_DAYLIGHT:
-            return e, source, False, self.settings["level"], "on"
+            return e, False, self.settings["level"], "on"
         zone_curve = curve.Curve(**{k: self.settings[k] for k in CURVE_KEYS}, boost=self.config[CONF_USE_BOOST])
         zone_curve, caps = curve.capped(zone_curve, curve.effective_elevation(highest, bias, day), curve.effective_elevation(lowest, bias, day))
         pct, phase = (curve.morning_level if now < noon_at else curve.evening_level)(zone_curve, e)
-        return e, source, caps, pct, phase
+        return e, caps, pct, phase
 
     def _rate_limit(self, target: float | None, kelvin: float | None, phase: str, now: datetime) -> None:
         """Move level and colour temperature gradually; jump on start, override and auto changes."""
@@ -370,19 +356,6 @@ class ZoneController:
         at = datetime.combine(self.auto_since.date(), self.settings["auto_back_on_time"], self.auto_since.tzinfo)
         return at if at > self.auto_since else at + timedelta(days=1)
 
-    def _lux_mean(self, now: datetime) -> float | None:
-        """Smoothed lux (mean of log10 over the smoothing window), or None to fall back to the sun model."""
-        if (value := _number(self.hass.states.get(self.config.get(CONF_LUX_SENSOR) or ""))) is not None:
-            self._lux.append((now, value))
-        window = timedelta(minutes=self.config.get(CONF_LUX_SMOOTHING, 10))
-        while self._lux and now - self._lux[0][0] > max(window, timedelta(minutes=LUX_STALE_MINUTES)):
-            self._lux.popleft()
-        recent = [v for t, v in self._lux if now - t <= window]
-        if not recent or now - self._lux[-1][0] > timedelta(minutes=LUX_STALE_MINUTES):
-            return None
-        mean = 10 ** (sum(math.log10(max(v, 1e-4)) for v in recent) / len(recent))
-        return mean if mean >= LUX_FLOOR else None
-
     @property
     def paused_lights(self) -> list[str]:
         return sorted(self._paused)
@@ -395,13 +368,6 @@ class ZoneController:
     def _notify(self) -> None:
         for listener in list(self._listeners):
             listener()
-
-
-def _number(state: State | None) -> float | None:
-    try:
-        return float(state.state) if state is not None else None
-    except ValueError:
-        return None
 
 
 def _brightness_pct(state: State) -> float:
