@@ -295,8 +295,8 @@ class ZoneController:
                 pct, same_level = (100.0 if on else 0.0), sent.on == on
             else:
                 pct = curve.dimmer_brightness(level, scale, minimum)
-                on = pct > 0
-                brightness = max(1, round(pct * 2.55)) if on else 0
+                brightness = round(pct * 2.55)
+                on = brightness > 0  # off until the light would get at least 1 of 255; `min` raises it above that
                 pct, same_level = brightness / 2.55, sent.on == on and (not on or max(1, round(sent.pct * 2.55)) == brightness)
                 if on:
                     data["brightness"] = brightness

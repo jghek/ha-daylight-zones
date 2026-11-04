@@ -4,7 +4,7 @@ from typing import Any
 
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
 
@@ -52,7 +52,17 @@ async def home(hass, freezer):
 
 @pytest.fixture
 def calls(home):
-    return {"on": async_mock_service(home, "light", "turn_on"), "off": async_mock_service(home, "light", "turn_off")}
+    """Light calls: "on" and "off" lists, and "all" in the order they were made."""
+    ordered: list = []
+
+    async def record(call) -> None:
+        ordered.append(call)
+        {"turn_on": on, "turn_off": off}[call.service].append(call)
+
+    on, off = [], []
+    home.services.async_register("light", "turn_on", record)
+    home.services.async_register("light", "turn_off", record)
+    return {"on": on, "off": off, "all": ordered}
 
 
 async def setup_zone(hass, zone: dict[str, Any] | None = None, title: str = "Living") -> MockConfigEntry:

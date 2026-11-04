@@ -13,8 +13,7 @@ from .conftest import OFFICE, ZONE, dimmer, setup_zone
 
 
 def last(calls, entity_id):
-    merged = [c for c in calls["on"] + calls["off"] if c.data["entity_id"] == entity_id]
-    return max(merged, key=lambda c: (calls["on"] + calls["off"]).index(c)) if merged else None
+    return next((c for c in reversed(calls["all"]) if c.data["entity_id"] == entity_id), None)
 
 
 def count(calls, entity_id):
@@ -281,3 +280,15 @@ async def test_on_off_light_and_switch_follow_the_threshold(home, calls, freezer
     assert last(calls, "light.porch").service == "turn_off"
     relay = [e.data for e in events if e.data["domain"] == "switch" and e.data["service_data"].get("entity_id") == "switch.relay"]
     assert relay[-1]["service"] == "turn_off"
+
+
+async def test_dim_light_stays_off_until_it_gets_one_brightness_step(home, calls, freezer):
+    """A light with a 4 % scale at 3 % zone level would get 0.3 of 255: it stays off, as the replaced script did."""
+    await setup_zone(home, ZONE | {"use_boost": False, "lights": {"light.a": {"type": "dimmer", "scale": 4, "min": 0}}})
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 3}, blocking=True)
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_maximum_step", "value": 100}, blocking=True)
+    await tick(home, freezer)
+    assert count(calls, "light.a") == 0 or last(calls, "light.a").service == "turn_off"
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 20}, blocking=True)
+    await tick(home, freezer)
+    assert last(calls, "light.a").data["brightness"] == 2  # 20 % × 4 % = 0.8 % → 2 of 255
