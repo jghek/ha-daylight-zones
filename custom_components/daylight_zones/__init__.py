@@ -1,15 +1,17 @@
 """Daylight Zones: per-zone lighting driven by darkness."""
 
+from types import MappingProxyType
+
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, SUBENTRY_ZONE, UNTIL
+from .const import CONF_ENTITY, CONF_LIGHTS, CONF_ZONE, DOMAIN, SUBENTRY_LIGHT, SUBENTRY_ZONE, UNTIL, light_title
 from .zone import ZoneController
 
 PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH, Platform.TIME]
@@ -46,9 +48,25 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: DaylightZonesEntry) -> bool:
+    """Version 1 kept a zone's lights inside the zone; version 2 has one light subentry per light."""
+    if entry.version == 1:
+        for zone_id, zone in list(entry.subentries.items()):
+            if zone.subentry_type != SUBENTRY_ZONE:
+                continue
+            for entity, limits in dict(zone.data.get(CONF_LIGHTS) or {}).items():
+                data = {CONF_ENTITY: entity, CONF_ZONE: zone_id, "type": limits.get("type", "dimmer"), "scale": limits.get("scale", limits.get("max", 100)),
+                        "min": limits.get("min", 0), "threshold": limits.get("threshold", 50)}
+                hass.config_entries.async_add_subentry(entry, ConfigSubentry(data=MappingProxyType(data), subentry_type=SUBENTRY_LIGHT, title=light_title(hass, zone.title, entity), unique_id=f"light:{entity}"))
+            hass.config_entries.async_update_subentry(entry, zone, data={k: v for k, v in zone.data.items() if k != CONF_LIGHTS})
+        hass.config_entries.async_update_entry(entry, version=2)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: DaylightZonesEntry) -> bool:
+    lights = [sub.data for sub in entry.subentries.values() if sub.subentry_type == SUBENTRY_LIGHT]
     entry.runtime_data = {
-        subentry_id: ZoneController(hass, subentry_id, subentry.title, dict(subentry.data))
+        subentry_id: ZoneController(hass, subentry_id, subentry.title, dict(subentry.data), {l[CONF_ENTITY]: dict(l) for l in lights if l.get(CONF_ZONE) == subentry_id})
         for subentry_id, subentry in entry.subentries.items() if subentry.subentry_type == SUBENTRY_ZONE
     }
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

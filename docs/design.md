@@ -30,7 +30,8 @@ Non-goals:
 
 | Term | Meaning |
 |---|---|
-| Zone | A group of lights with one set of settings. One config subentry, one HA device. A light belongs to at most one zone. |
+| Zone | A group of lights with one set of settings. One config subentry, one HA device. |
+| Light | One light or switch in a zone, with its output settings (§8). One config subentry per light ("Add light"); a light belongs to at most one zone. |
 | Effective elevation (E) | The darkness axis, in degrees: the real solar elevation shifted by season (§3). |
 | Auto | Switch. On: the zone follows the sun and manages its lights. Off: lights off, and the zone leaves them alone. |
 | Auto back on | Setting. When on, auto switches itself back on at the first solar noon or set time after it went off, however it went off. |
@@ -218,14 +219,28 @@ All take `zone`: one or more zone devices.
 
 ### 10.1 Zone configuration (config subentry)
 
+Zone (subentry "Add zone", the cogwheel reconfigures it):
+
 | Setting | Values |
 |---|---|
 | Name | text |
-| Lights and switches | `light.*` and `switch.*` entities; then per light the type (`dimmer` / `on_off`), then `scale` and `min` % for dimmers or `threshold` % for on/off (shown with the friendly names) |
 | Brightness | `daylight` / `fixed` |
 | Dusk boost | yes/no (daylight only) |
 | Colour temperature follows daylight | yes/no |
 | Off hours | `none` / `window` / `switch_off`, and the schedule helper whose blocks are the off hours |
+
+Light (subentry "Add light", one per light; the cogwheel reconfigures it, and moving a light to another zone is done there):
+
+| Setting | Values |
+|---|---|
+| Light or switch | one `light.*` or `switch.*` entity, not in another zone |
+| Zone | one of the zones |
+| Type | `dimmer` (default for lights that can dim) / `on_off` (always for switches) |
+| Scale %, Min % | dimmers (§8) |
+| Threshold % | on/off (§8) |
+
+The light's title is "<zone>: <friendly name>". Version 1 entries kept the lights inside the zone; they are migrated to light subentries on the first start of 0.2.0.
+`sensor.<zone>_level` lists the zone's lights in its `lights` attribute, for example `dimmer 0-60 %`.
 
 ### 10.2 Zone entities
 

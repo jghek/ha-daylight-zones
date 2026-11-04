@@ -21,41 +21,72 @@
           "title": "Zone",
           "data": {
             "name": "Name",
-            "lights": "Lights and switches",
             "brightness": "Brightness",
             "use_boost": "Dusk boost (daylight brightness only)",
             "use_color_temp": "Colour temperature follows daylight",
             "off_hours": "Off hours",
             "off_schedule": "Off-hours schedule (a schedule helper: its blocks are the off hours)"
-          }
+          },
+          "description": "How the zone behaves. Add its lights with 'Add light'."
         },
         "reconfigure": {
           "title": "Zone",
           "data": {
             "name": "Name",
-            "lights": "Lights and switches",
             "brightness": "Brightness",
             "use_boost": "Dusk boost (daylight brightness only)",
             "use_color_temp": "Colour temperature follows daylight",
             "off_hours": "Off hours",
             "off_schedule": "Off-hours schedule (a schedule helper: its blocks are the off hours)"
-          }
-        },
-        "lights": {
-          "title": "Light settings",
-          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (straight line in between; 0 % is off). On/off: on when the zone level reaches 'threshold'."
-        },
-        "light_types": {
-          "title": "Light types",
-          "description": "Dimmer: brightness follows the zone level. On/off: on above a threshold. Switches are always on/off."
+          },
+          "description": "How the zone behaves. Add its lights with 'Add light'."
         }
       },
       "error": {
-        "light_in_other_zone": "One of these lights already belongs to another zone.",
         "schedule_required": "Choose a schedule helper for the off hours, or set off hours to none."
       },
       "abort": {
         "reconfigure_successful": "Zone updated."
+      }
+    },
+    "light": {
+      "entry_type": "Light",
+      "initiate_flow": {
+        "user": "Add light",
+        "reconfigure": "Reconfigure light"
+      },
+      "step": {
+        "user": {
+          "title": "Light",
+          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (a straight line; 0 % is off). On/off: on when the zone level reaches 'threshold'. Switches are always on/off.",
+          "data": {
+            "entity": "Light or switch",
+            "zone": "Zone",
+            "type": "Type",
+            "scale": "Scale %",
+            "min": "Min %",
+            "threshold": "Threshold %"
+          }
+        },
+        "reconfigure": {
+          "title": "Light",
+          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (a straight line; 0 % is off). On/off: on when the zone level reaches 'threshold'. Switches are always on/off.",
+          "data": {
+            "entity": "Light or switch",
+            "zone": "Zone",
+            "type": "Type",
+            "scale": "Scale %",
+            "min": "Min %",
+            "threshold": "Threshold %"
+          }
+        }
+      },
+      "error": {
+        "light_in_other_zone": "This light already belongs to a zone. Reconfigure that light to move it."
+      },
+      "abort": {
+        "no_zones": "Add a zone first.",
+        "reconfigure_successful": "Light updated."
       }
     }
   },

@@ -1,12 +1,27 @@
 from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
+from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_LIGHT, SUBENTRY_ZONE
 
 from .conftest import setup_zone
 
-ZONE_FORM = {"name": "Hallway", "lights": ["light.c"], "brightness": "daylight", "use_boost": False, "use_color_temp": False, "off_hours": "window",
-             "off_schedule": "schedule.nights"}
+ZONE_FORM = {"name": "Hallway", "brightness": "daylight", "use_boost": False, "use_color_temp": False, "off_hours": "window", "off_schedule": "schedule.nights"}
+
+
+def zone_id(entry, title="Living"):
+    return next(sid for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_ZONE and sub.title == title)
+
+
+def lights(entry):
+    return {sub.data["entity"]: (sub.title, dict(sub.data)) for sub in entry.subentries.values() if sub.subentry_type == SUBENTRY_LIGHT}
+
+
+async def configure(home, entry, kind, form, source=SOURCE_USER, subentry_id=None):
+    context = {"source": source} | ({"subentry_id": subentry_id} if subentry_id else {})
+    result = await home.config_entries.subentries.async_init((entry.entry_id, kind), context=context)
+    if result["type"] is not FlowResultType.FORM:
+        return result
+    return await home.config_entries.subentries.async_configure(result["flow_id"], form)
 
 
 async def test_create_entry(home):
@@ -16,57 +31,71 @@ async def test_create_entry(home):
     assert result["title"] == "Daylight Zones"
 
 
-async def test_add_zone_with_light_limits(home, calls):
+async def test_migration_makes_one_light_subentry_per_light(home, calls):
     entry = await setup_zone(home)
-    home.states.async_set("light.c", "off", {"friendly_name": "Hall ceiling"})
-    result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM)
-    assert result["step_id"] == "light_types"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"Hall ceiling": "dimmer"})
-    assert result["step_id"] == "lights"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"Hall ceiling – scale %": 40, "Hall ceiling – min %": 5})
+    assert entry.version == 2
+    assert "lights" not in entry.subentries[zone_id(entry)].data
+    assert lights(entry) == {
+        "light.a": ("Living: a", {"entity": "light.a", "zone": zone_id(entry), "type": "dimmer", "scale": 50, "min": 0, "threshold": 50}),
+        "light.b": ("Living: b", {"entity": "light.b", "zone": zone_id(entry), "type": "dimmer", "scale": 100, "min": 10, "threshold": 50}),
+    }
+    assert home.states.get("sensor.living_level").attributes["lights"] == {"light.a": "dimmer 0-50 %", "light.b": "dimmer 10-100 %"}
+
+
+async def test_add_zone_then_a_light(home, calls):
+    entry = await setup_zone(home)
+    result = await configure(home, entry, SUBENTRY_ZONE, ZONE_FORM)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await home.async_block_till_done()
-    hallway = next(s for s in entry.subentries.values() if s.title == "Hallway")
-    assert hallway.data["lights"] == {"light.c": {"type": "dimmer", "scale": 40, "min": 5}}
-    assert home.states.get("sensor.hallway_level") is not None
+    home.states.async_set("light.c", "off", {"friendly_name": "Hall ceiling", "supported_color_modes": ["brightness"]})
+    result = await configure(home, entry, SUBENTRY_LIGHT, {"entity": "light.c", "zone": zone_id(entry, "Hallway"), "type": "dimmer", "scale": 40, "min": 5, "threshold": 50})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await home.async_block_till_done()
+    assert lights(entry)["light.c"][0] == "Hallway: Hall ceiling"
+    assert home.states.get("sensor.hallway_level").attributes["lights"] == {"light.c": "dimmer 5-40 %"}
 
 
 async def test_light_can_only_be_in_one_zone(home, calls):
     entry = await setup_zone(home)
-    result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM | {"lights": ["light.a"]})
-    assert result["errors"] == {"lights": "light_in_other_zone"}
+    result = await configure(home, entry, SUBENTRY_LIGHT, {"entity": "light.a", "zone": zone_id(entry), "type": "dimmer", "scale": 100, "min": 0, "threshold": 50})
+    assert result["errors"] == {"entity": "light_in_other_zone"}
 
 
-async def test_reconfigure_keeps_own_lights(home, calls):
+async def test_switch_is_always_on_off(home, calls):
     entry = await setup_zone(home)
-    subentry_id = next(iter(entry.subentries))
-    result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry_id})
-    assert result["step_id"] == "reconfigure"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM | {"name": "Living", "lights": ["light.a"], "use_boost": True})
-    assert result["step_id"] == "light_types"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"a": "on_off"})
-    assert result["step_id"] == "lights"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"a – threshold %": 30})
+    home.states.async_set("switch.relay", "off", {"friendly_name": "Relay"})
+    result = await configure(home, entry, SUBENTRY_LIGHT, {"entity": "switch.relay", "zone": zone_id(entry), "type": "dimmer", "scale": 100, "min": 0, "threshold": 25})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert lights(entry)["switch.relay"][1]["type"] == "on_off"
+
+
+async def test_reconfigure_a_light(home, calls):
+    entry = await setup_zone(home)
+    light_id = next(sid for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_LIGHT and sub.data["entity"] == "light.a")
+    result = await configure(home, entry, SUBENTRY_LIGHT, {"entity": "light.a", "zone": zone_id(entry), "type": "on_off", "scale": 100, "min": 0, "threshold": 30}, SOURCE_RECONFIGURE, light_id)
     assert result["type"] is FlowResultType.ABORT
     await home.async_block_till_done()
-    assert entry.subentries[subentry_id].data["lights"] == {"light.a": {"type": "on_off", "threshold": 30}}
-    assert home.states.get("sensor.living_level").state == "60.0"
+    assert lights(entry)["light.a"][1] | {"zone": None} == {"entity": "light.a", "zone": None, "type": "on_off", "scale": 100, "min": 0, "threshold": 30}
+    assert home.states.get("sensor.living_level").attributes["lights"]["light.a"] == "on/off from 30 %"
+
+
+async def test_no_zones_no_lights(home):
+    result = await home.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await home.config_entries.flow.async_configure(result["flow_id"], {})
+    entry = result["result"]
+    result = await configure(home, entry, SUBENTRY_LIGHT, {})
+    assert result == result | {"type": FlowResultType.ABORT, "reason": "no_zones"}
 
 
 async def test_off_hours_need_a_schedule(home, calls):
     entry = await setup_zone(home)
-    result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {k: v for k, v in ZONE_FORM.items() if k != "off_schedule"})
+    result = await configure(home, entry, SUBENTRY_ZONE, {k: v for k, v in ZONE_FORM.items() if k != "off_schedule"})
     assert result["errors"] == {"off_schedule": "schedule_required"}
 
 
-async def test_switches_skip_the_type_step(home, calls):
+async def test_renaming_a_zone_retitles_its_lights(home, calls):
     entry = await setup_zone(home)
-    home.states.async_set("switch.relay", "off", {"friendly_name": "Relay"})
-    result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM | {"lights": ["switch.relay"]})
-    assert result["step_id"] == "lights"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"Relay – threshold %": 25})
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    result = await configure(home, entry, SUBENTRY_ZONE, ZONE_FORM | {"name": "Lounge", "use_boost": True}, SOURCE_RECONFIGURE, zone_id(entry))
+    assert result["type"] is FlowResultType.ABORT
+    await home.async_block_till_done()
+    assert {title for title, _ in lights(entry).values()} == {"Lounge: a", "Lounge: b"}

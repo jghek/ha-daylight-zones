@@ -5,6 +5,9 @@ from datetime import time
 
 DOMAIN = "daylight_zones"
 SUBENTRY_ZONE = "zone"
+SUBENTRY_LIGHT = "light"
+CONF_ENTITY = "entity"
+CONF_ZONE = "zone"
 EVENT_PHASE_CHANGED = "daylight_zones_phase_changed"
 
 CONF_LIGHTS = "lights"
@@ -82,6 +85,18 @@ def setting_used(needs: str | None, zone: dict) -> bool:
         "color_temp": zone[CONF_USE_COLOR_TEMP],
         "off_hours": zone[CONF_OFF_HOURS] != OFF_HOURS_NONE,
     }[needs]
+
+
+def light_title(hass, zone_title: str, entity_id: str) -> str:
+    """'Kantoor: Kantoor Voor' — the zone's name and the light's friendly name."""
+    state = hass.states.get(entity_id)
+    return f"{zone_title}: {state.name if state else entity_id}"
+
+
+def describe_light(limits: dict) -> str:
+    """'dimmer 0-60 %' or 'on/off from 50 %', for the level sensor's attributes."""
+    kind, scale, minimum, threshold = light_settings(limits)
+    return f"on/off from {threshold:g} %" if kind == LIGHT_ON_OFF else f"dimmer {minimum:g}-{scale:g} %"
 
 
 def light_settings(limits: dict) -> tuple[str, float, float, float]:

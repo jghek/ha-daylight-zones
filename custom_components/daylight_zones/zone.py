@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 
 from . import curve
 from .const import (
-    BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_OFF_HOURS,
+    BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_OFF_HOURS,
     CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS, OTHER_SETTINGS,
     OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, TIME_SETTINGS, UPDATE_SECONDS,
     CONF_OFF_SCHEDULE, LIGHT_ON_OFF, ON_OFF_MARGIN, light_settings,
@@ -49,12 +49,12 @@ class Snapshot:
 
 
 class ZoneController:
-    def __init__(self, hass: HomeAssistant, subentry_id: str, name: str, config: dict[str, Any]) -> None:
+    def __init__(self, hass: HomeAssistant, subentry_id: str, name: str, config: dict[str, Any], lights: dict[str, dict[str, Any]]) -> None:
         self.hass = hass
         self.subentry_id = subentry_id
         self.name = name
         self.config = config
-        self.lights: dict[str, dict[str, float]] = config[CONF_LIGHTS]
+        self.lights = lights  # entity -> type, scale, min, threshold
         self.settings: dict[str, Any] = {s.key: s.default for s in NUMBER_SETTINGS} | {key: default for key, _, default, _ in TIME_SETTINGS} | dict(OTHER_SETTINGS)
         self.auto = True
         self.auto_since = dt_util.now()

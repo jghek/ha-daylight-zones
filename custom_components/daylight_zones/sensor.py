@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import DaylightZonesEntry
-from .const import CONF_USE_COLOR_TEMP, PHASES
+from .const import CONF_USE_COLOR_TEMP, PHASES, describe_light
 from .entity import ZoneEntity
 
 
@@ -35,7 +35,8 @@ class LevelSensor(ZoneEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         s = self.zone.snapshot
         return {"phase": s.phase, "curve_level": s.curve_level, "off_hours_level": s.off_hours_level, "effective_elevation": s.effective_elevation,
-                "caps_active": s.caps_active, "auto": self.zone.auto, "override": self.zone.override, "paused_lights": self.zone.paused_lights}
+                "caps_active": s.caps_active, "auto": self.zone.auto, "override": self.zone.override, "paused_lights": self.zone.paused_lights,
+                "lights": {entity: describe_light(limits) for entity, limits in self.zone.lights.items()}}
 
 
 class PhaseSensor(ZoneEntity, SensorEntity):

@@ -1,4 +1,4 @@
-"""Config flow: one entry, one subentry per zone."""
+"""Config flow: one entry; zones and lights are subentries. A light belongs to one zone."""
 
 from typing import Any
 
@@ -9,16 +9,15 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
-    BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_OFF_HOURS, CONF_USE_BOOST,
-    CONF_USE_COLOR_TEMP, DOMAIN, OFF_HOURS_NONE, OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, SUBENTRY_ZONE,
-    CONF_OFF_SCHEDULE, LIGHT_DIMMER, LIGHT_ON_OFF, light_settings,
+    BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED, CONF_BRIGHTNESS, CONF_ENTITY, CONF_OFF_HOURS, CONF_OFF_SCHEDULE, CONF_USE_BOOST, CONF_USE_COLOR_TEMP, CONF_ZONE,
+    DOMAIN, LIGHT_DIMMER, LIGHT_ON_OFF, OFF_HOURS_NONE, OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, SUBENTRY_LIGHT, SUBENTRY_ZONE, light_title,
 )
 
 PERCENT = selector.NumberSelector(selector.NumberSelectorConfig(min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX))
 
 
-class NightCompensationConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+class DaylightZonesConfigFlow(ConfigFlow, domain=DOMAIN):
+    VERSION = 2
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
@@ -28,44 +27,33 @@ class NightCompensationConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_ZONE: ZoneSubentryFlow}
+        return {SUBENTRY_ZONE: ZoneSubentryFlow, SUBENTRY_LIGHT: LightSubentryFlow}
 
 
 class ZoneSubentryFlow(ConfigSubentryFlow):
-    """Two steps: the zone itself, then max/min per light."""
-
-    def __init__(self) -> None:
-        self._zone: dict[str, Any] = {}
-        self._title = ""
-        self._current: dict[str, Any] = {}
-        self._types: dict[str, str] = {}
+    """The zone's behaviour; its lights are added as separate light subentries."""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        return await self._zone_step("user", user_input)
+        return await self._zone_step("user", user_input, "", {})
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         subentry = self._get_reconfigure_subentry()
-        self._current = dict(subentry.data)
-        return await self._zone_step("reconfigure", user_input, subentry.title)
+        return await self._zone_step("reconfigure", user_input, subentry.title, dict(subentry.data))
 
-    async def _zone_step(self, step_id: str, user_input: dict[str, Any] | None, title: str = "") -> SubentryFlowResult:
+    async def _zone_step(self, step_id: str, user_input: dict[str, Any] | None, title: str, current: dict[str, Any]) -> SubentryFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            lights = user_input.pop(CONF_LIGHTS)
-            taken = self._lights_in_other_zones()
-            if any(light in taken for light in lights):
-                errors[CONF_LIGHTS] = "light_in_other_zone"
-            elif user_input[CONF_OFF_HOURS] != OFF_HOURS_NONE and not user_input.get(CONF_OFF_SCHEDULE):
+            if user_input[CONF_OFF_HOURS] != OFF_HOURS_NONE and not user_input.get(CONF_OFF_SCHEDULE):
                 errors[CONF_OFF_SCHEDULE] = "schedule_required"
             else:
-                self._title = user_input.pop("name")
-                self._zone = user_input | {CONF_LIGHTS: lights}
-                return await self.async_step_light_types()
-            user_input[CONF_LIGHTS] = lights
-        current = self._current
+                name = user_input.pop("name")
+                if self.source == "reconfigure":
+                    entry, subentry = self._get_entry(), self._get_reconfigure_subentry()
+                    self._retitle_lights(entry, subentry.subentry_id, name)
+                    return self.async_update_and_abort(entry, subentry, title=name, data=user_input)
+                return self.async_create_entry(title=name, data=user_input)
         schema = vol.Schema({
             vol.Required("name", default=title): str,
-            vol.Required(CONF_LIGHTS, default=list(current.get(CONF_LIGHTS, {}))): selector.EntitySelector(selector.EntitySelectorConfig(domain=["light", "switch"], multiple=True)),
             vol.Required(CONF_BRIGHTNESS, default=current.get(CONF_BRIGHTNESS, BRIGHTNESS_DAYLIGHT)): selector.SelectSelector(selector.SelectSelectorConfig(options=[BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED], translation_key="brightness")),
             vol.Required(CONF_USE_BOOST, default=current.get(CONF_USE_BOOST, False)): bool,
             vol.Required(CONF_USE_COLOR_TEMP, default=current.get(CONF_USE_COLOR_TEMP, False)): bool,
@@ -74,48 +62,56 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         })
         return self.async_show_form(step_id=step_id, data_schema=self.add_suggested_values_to_schema(schema, user_input), errors=errors)
 
-    async def async_step_light_types(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Dimmer or on/off per light; switches are always on/off, so they are not asked."""
-        lights = [light for light in self._zone[CONF_LIGHTS] if light.startswith("light.")]
-        labels = self._labels(self._zone[CONF_LIGHTS])
-        if user_input is not None or not lights:
-            self._types = {light: (user_input or {}).get(labels[light], LIGHT_ON_OFF) if light in lights else LIGHT_ON_OFF for light in self._zone[CONF_LIGHTS]}
-            return await self.async_step_lights()
-        previous = self._current.get(CONF_LIGHTS, {})
-        types = selector.SelectSelector(selector.SelectSelectorConfig(options=[LIGHT_DIMMER, LIGHT_ON_OFF], translation_key="light_type"))
-        schema = {vol.Required(labels[light], default=light_settings(previous[light])[0] if light in previous else self._default_type(light)): types for light in lights}
-        return self.async_show_form(step_id="light_types", data_schema=vol.Schema(schema))
+    def _retitle_lights(self, entry: ConfigEntry, zone_id: str, zone_title: str) -> None:
+        """Light titles start with their zone's name; keep them in step when the zone is renamed."""
+        for sub in entry.subentries.values():
+            if sub.subentry_type == SUBENTRY_LIGHT and sub.data.get(CONF_ZONE) == zone_id:
+                title = light_title(self.hass, zone_title, sub.data[CONF_ENTITY])
+                if title != sub.title:
+                    self.hass.config_entries.async_update_subentry(entry, sub, title=title)
 
-    async def async_step_lights(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Dimmers: scale and minimum (1-100 % zone level maps onto minimum-scale). On/off: the zone level at which it switches on."""
-        lights = self._zone[CONF_LIGHTS]
-        labels = self._labels(lights)
-        fields = {light: (["scale", "min"] if self._types[light] == LIGHT_DIMMER else ["threshold"]) for light in lights}
+
+class LightSubentryFlow(ConfigSubentryFlow):
+    """One light or switch: its zone, and how it follows the zone level."""
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        return await self._light_step("user", user_input, {})
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        return await self._light_step("reconfigure", user_input, dict(self._get_reconfigure_subentry().data))
+
+    async def _light_step(self, step_id: str, user_input: dict[str, Any] | None, current: dict[str, Any]) -> SubentryFlowResult:
+        entry = self._get_entry()
+        zones = {sid: sub.title for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_ZONE}
+        if not zones:
+            return self.async_abort(reason="no_zones")
+        errors: dict[str, str] = {}
         if user_input is not None:
-            limits = {light: {"type": self._types[light]} | {f: user_input[f"{labels[light]} – {f} %"] for f in fields[light]} for light in lights}
-            data = self._zone | {CONF_LIGHTS: limits}
-            if self.source == "reconfigure":
-                return self.async_update_and_abort(self._get_entry(), self._get_reconfigure_subentry(), title=self._title, data=data)
-            return self.async_create_entry(title=self._title, data=data)
-        previous = self._current.get(CONF_LIGHTS, {})
-        schema: dict[Any, Any] = {}
-        for light in lights:
-            _, scale, minimum, threshold = light_settings(previous.get(light, {}))
-            for field in fields[light]:
-                schema[vol.Required(f"{labels[light]} – {field} %", default={"scale": scale, "min": minimum, "threshold": threshold}[field])] = PERCENT
-        return self.async_show_form(step_id="lights", data_schema=vol.Schema(schema))
+            entity = user_input[CONF_ENTITY]
+            own = self._reconfigure_subentry_id if self.source == "reconfigure" else None
+            taken = {sub.data.get(CONF_ENTITY): zones.get(sub.data.get(CONF_ZONE), "?") for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_LIGHT and sid != own}
+            if entity in taken:
+                errors[CONF_ENTITY] = "light_in_other_zone"
+            else:
+                data = user_input | ({"type": LIGHT_ON_OFF} if not entity.startswith("light.") else {})  # switches are always on/off
+                title = light_title(self.hass, zones[data[CONF_ZONE]], entity)
+                if self.source == "reconfigure":
+                    return self.async_update_and_abort(entry, self._get_reconfigure_subentry(), title=title, data=data, unique_id=f"light:{entity}")
+                return self.async_create_entry(title=title, data=data, unique_id=f"light:{entity}")
+        defaults = {"type": self._default_type(current.get(CONF_ENTITY)), "scale": 100, "min": 0, "threshold": 50} | current
+        schema = vol.Schema({
+            vol.Required(CONF_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain=["light", "switch"])),
+            vol.Required(CONF_ZONE): selector.SelectSelector(selector.SelectSelectorConfig(options=[{"value": sid, "label": title} for sid, title in zones.items()])),
+            vol.Required("type", default=defaults["type"]): selector.SelectSelector(selector.SelectSelectorConfig(options=[LIGHT_DIMMER, LIGHT_ON_OFF], translation_key="light_type")),
+            vol.Required("scale", default=defaults["scale"]): PERCENT,
+            vol.Required("min", default=defaults["min"]): PERCENT,
+            vol.Required("threshold", default=defaults["threshold"]): PERCENT,
+        })
+        suggested = user_input or {k: current[k] for k in (CONF_ENTITY, CONF_ZONE) if k in current}
+        return self.async_show_form(step_id=step_id, data_schema=self.add_suggested_values_to_schema(schema, suggested), errors=errors)
 
-    def _default_type(self, light: str) -> str:
+    def _default_type(self, entity: str | None) -> str:
         """Dimmer when the light can dim, otherwise on/off."""
-        state = self.hass.states.get(light)
+        state = self.hass.states.get(entity) if entity else None
         modes = (state.attributes.get("supported_color_modes") if state else None) or []
-        return LIGHT_ON_OFF if modes and set(modes) <= {"onoff"} else LIGHT_DIMMER
-
-    def _labels(self, lights: list[str]) -> dict[str, str]:
-        """Field labels from the lights' friendly names; the entity ID is added when two lights share a name."""
-        names = {light: (state.name if (state := self.hass.states.get(light)) else light) for light in lights}
-        return {light: name if list(names.values()).count(name) == 1 else f"{name} ({light})" for light, name in names.items()}
-
-    def _lights_in_other_zones(self) -> set[str]:
-        own = self._reconfigure_subentry_id if self.source == "reconfigure" else None
-        return {light for sid, sub in self._get_entry().subentries.items() if sid != own for light in sub.data.get(CONF_LIGHTS, {})}
+        return LIGHT_ON_OFF if (entity and not entity.startswith("light.")) or (modes and set(modes) <= {"onoff"}) else LIGHT_DIMMER

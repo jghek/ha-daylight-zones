@@ -66,7 +66,8 @@ def calls(home):
 
 
 async def setup_zone(hass, zone: dict[str, Any] | None = None, title: str = "Living") -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="Daylight Zones", subentries_data=[{"data": zone or ZONE, "subentry_type": SUBENTRY_ZONE, "title": title, "unique_id": None}])
+    """An entry in the version-1 format (lights inside the zone), so every test also runs the migration to light subentries."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="Daylight Zones", version=1, subentries_data=[{"data": zone or ZONE, "subentry_type": SUBENTRY_ZONE, "title": title, "unique_id": None}])
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
