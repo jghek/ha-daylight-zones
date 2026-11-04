@@ -167,7 +167,7 @@ flowchart TD
 ```
 
 1. **Override** on: the override level, whatever auto is.
-2. **Auto** off: when auto switches off the lights go off (10 s fade, or the action's `transition`); after that the zone does not touch them,
+2. **Auto** off: when auto switches off the lights go off (the zone's `transition`, or the action's `transition`); after that the zone does not touch them,
    until auto is switched on again or the auto-back-on setting switches it on (first solar noon or set time after it went off).
 3. Otherwise: brightness (daylight curve or fixed level) × off hours.
 
@@ -182,7 +182,7 @@ flowchart TD
 
 - Colour temperature is only sent to lights (not switches) that support it (§5).
 - A command is only sent when on/off, the light's 0–255 brightness value, or its colour temperature (§5) changes. Measuring in brightness values
-  keeps dim lights smooth: a light with a 4 % maximum has only about 10 values. Normal steps use a 2 s transition.
+  keeps dim lights smooth: a light with a 4 % maximum has only about 10 values. Every command uses the zone's `transition` setting (default 1 s).
 - **Rate limit**: the zone level moves at most `max_step` % per minute (default 5 %), so a changed setting moves the lights gradually. The limit applies to the zone level, so each light moves in proportion to its own range: a dimmer with scale 40 % moves at most 2 % of its full brightness per minute at the default.
   Switching auto or override bypasses the limit.
 - **Manual change detection**: a change of a light's state, brightness or colour temperature whose context did not come from the integration
@@ -249,6 +249,7 @@ Entities for settings a zone does not use are not created.
 | `number.<zone>_level` | % | fixed | 80 |
 | `number.<zone>_winter_bias` | ° | daylight or colour temperature | 3 |
 | `number.<zone>_maximum_step` | %/min | always | 5 |
+| `number.<zone>_transition` | s | always | 1 (Shelly Gen1 lights cap transitions at 5 s) |
 | `number.<zone>_colour_temperature_day` / `_dusk` / `_night` | K | colour temperature | 5000 / 3500 / 2400 |
 | `number.<zone>_day_colour_from` / `_night_colour_from` | ° | colour temperature | 20 / −8 |
 | `number.<zone>_off_hours_fade` | min | off hours | 30 |

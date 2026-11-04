@@ -24,8 +24,6 @@ OTHER_SETTINGS = (("auto_back_on", False), ("auto_back_on_at", "noon"))
 PHASES = ["day", "evening_ramp", "peak", "settle", "cosy", "morning_ramp", "on", "off_fade", "off_hours", "on_fade", "override", "auto_off"]
 
 UPDATE_SECONDS = 60
-STEP_TRANSITION = 2  # seconds, for normal level steps
-OFF_TRANSITION = 10  # seconds, when the auto switch turns the lights off
 MANUAL_TOLERANCE = 3  # % brightness difference that still counts as our own command
 ON_OFF_MARGIN = 2  # % below the threshold before an on/off light switches off again
 MANUAL_TOLERANCE_K = 150  # kelvin
@@ -57,6 +55,7 @@ NUMBER_SETTINGS = (
     NumberSetting("level", "Level", "%", 0, 100, 1, 80, "fixed"),
     NumberSetting("winter_bias", "Winter bias", "°", 0, 10, 0.5, 0, "elevation"),
     NumberSetting("max_step", "Maximum step", "%/min", 1, 100, 1, 5),
+    NumberSetting("transition", "Transition", "s", 0, 10, 0.1, 1),
     NumberSetting("ct_day", "Colour temperature day", "K", 2000, 6500, 50, 5000, "color_temp"),
     NumberSetting("ct_dusk", "Colour temperature dusk", "K", 2000, 6500, 50, 3500, "color_temp"),
     NumberSetting("ct_night", "Colour temperature night", "K", 2000, 6500, 50, 2400, "color_temp"),

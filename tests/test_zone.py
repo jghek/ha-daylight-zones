@@ -74,6 +74,7 @@ async def test_auto_off_turns_lights_off_and_leaves_them(home, calls, freezer):
     await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_auto_back_on"}, blocking=True)
     await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)]}, blocking=True)
     assert last(calls, "light.a").service == "turn_off"
+    assert last(calls, "light.a").data["transition"] == 1  # the zone's transition setting
     assert state(home, "sensor.living_phase") == "auto_off"
     sent = count(calls, "light.a")
     home.states.async_set("light.a", "on", {"brightness": 200}, context=Context())  # someone switches it on: left alone
@@ -127,7 +128,7 @@ async def test_office_fixed_level_color_temp_and_switch_off(home, calls, freezer
     assert state(home, "sensor.office_level") == "80.0"
     assert state(home, "sensor.office_phase") == "on"
     assert state(home, "sensor.office_colour_temperature") == "5000"
-    assert last(calls, "light.desk").data == {"entity_id": "light.desk", "transition": 2, "brightness": 204, "color_temp_kelvin": 5000}
+    assert last(calls, "light.desk").data == {"entity_id": "light.desk", "transition": 1, "brightness": 204, "color_temp_kelvin": 5000}
     assert "color_temp_kelvin" not in last(calls, "light.plain").data  # no colour temperature support
     freezer.move_to("2026-11-04 17:30:00+01:00")  # after sunset: warmer, level unchanged
     async_fire_time_changed(home, dt_util.utcnow())
@@ -267,7 +268,7 @@ async def test_on_off_light_and_switch_follow_the_threshold(home, calls, freezer
     home.states.async_set("switch.relay", "off")
     zone = ZONE | {"use_boost": False, "lights": {"light.porch": {"type": "on_off", "threshold": 50}, "switch.relay": {"type": "on_off", "threshold": 50}}}
     await setup_zone(home, zone)  # cosy 60 % >= 50: both on
-    assert last(calls, "light.porch").data == {"entity_id": "light.porch", "transition": 2}
+    assert last(calls, "light.porch").data == {"entity_id": "light.porch", "transition": 1}
     relay = [e.data for e in events if e.data["domain"] == "switch" and e.data["service_data"].get("entity_id") == "switch.relay"]
     assert relay[-1]["service"] == "turn_on"
     home.states.async_set("light.porch", "on", {"supported_color_modes": ["onoff"]}, context=Context())
@@ -305,3 +306,11 @@ async def test_override_level_from_the_action_does_not_change_the_setting(home, 
     await home.services.async_call(DOMAIN, "override_off", {"zone": [device(home, entry)]}, blocking=True)
     await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_override"}, blocking=True)
     assert state(home, "sensor.living_level") == "80.0"  # the switch uses the setting
+
+
+async def test_transition_is_a_zone_setting(home, calls, freezer):
+    await setup_zone(home)
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_transition", "value": 0.5}, blocking=True)
+    await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 40}, blocking=True)
+    await tick(home, freezer, 5)
+    assert last(calls, "light.b").data["transition"] == 0.5

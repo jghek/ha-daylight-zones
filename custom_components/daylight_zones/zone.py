@@ -20,7 +20,7 @@ from . import curve
 from .const import (
     BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_OFF_HOURS,
     CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS, OTHER_SETTINGS,
-    OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, OFF_TRANSITION, STEP_TRANSITION, TIME_SETTINGS, UPDATE_SECONDS,
+    OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, TIME_SETTINGS, UPDATE_SECONDS,
     CONF_OFF_SCHEDULE, LIGHT_ON_OFF, ON_OFF_MARGIN, light_settings,
 )
 
@@ -126,7 +126,7 @@ class ZoneController:
             self._paused.clear()
             self._last_kind = None
             if not on and not self.override:
-                self._all_off(OFF_TRANSITION if transition is None else transition)
+                self._all_off(self.settings["transition"] if transition is None else transition)
         self.async_update()
 
     @callback
@@ -146,7 +146,7 @@ class ZoneController:
         self._paused.clear()
         self._last_kind = None
         if was and not on and not self.auto:
-            self._all_off(OFF_TRANSITION)
+            self._all_off(self.settings["transition"])
         self.async_update()
 
     @callback
@@ -208,7 +208,7 @@ class ZoneController:
             self.override, self._override_end = False, {}
             self._last_kind = None
             if not self.auto:
-                self._all_off(OFF_TRANSITION)
+                self._all_off(self.settings["transition"])
 
         e, caps, curve_pct, curve_phase = self._sun(now)
         hours_pct, hours_phase = 100.0, None
@@ -221,7 +221,7 @@ class ZoneController:
                 self.auto, self.auto_since = False, now
                 self._paused.clear()
                 if not self.override:
-                    self._all_off(STEP_TRANSITION)
+                    self._all_off(self.settings["transition"])
         base_pct, base_phase = curve.base_level(curve_pct, curve_phase, hours_pct, hours_phase)
         if self._base_phase is not None and base_phase != self._base_phase:
             self._paused.clear()
@@ -302,7 +302,7 @@ class ZoneController:
             if same_level and same_kelvin:
                 continue  # send only when on/off, the 0-255 brightness value, or the colour temperature changes
             if is_light:
-                data["transition"] = STEP_TRANSITION
+                data["transition"] = self.settings["transition"]
                 if on and light_k is not None:
                     data["color_temp_kelvin"] = round(light_k)
             self._send(entity_id, on, pct, light_k if on else sent.kelvin, data)
