@@ -19,7 +19,7 @@ from homeassistant.util import dt as dt_util
 from . import curve
 from .const import (
     BRIGHTNESS_DAYLIGHT, COLOR_TEMP_SEND, COLOR_TEMP_STEP, CONF_BRIGHTNESS, CONF_LIGHTS, CONF_LUX_SENSOR, CONF_LUX_SMOOTHING, CONF_OFF_HOURS, CONF_SOURCE,
-    CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, LUX_FLOOR, LUX_STALE_MINUTES, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS,
+    CONF_USE_BOOST, CONF_USE_COLOR_TEMP, EVENT_PHASE_CHANGED, LUX_FLOOR, LUX_STALE_MINUTES, MANUAL_TOLERANCE, MANUAL_TOLERANCE_K, NUMBER_SETTINGS, OTHER_SETTINGS,
     OFF_HOURS_SWITCH_OFF, OFF_HOURS_WINDOW, OFF_TRANSITION, SOURCE_LUX, STEP_TRANSITION, TIME_SETTINGS, UPDATE_SECONDS,
 )
 
@@ -55,10 +55,9 @@ class ZoneController:
         self.name = name
         self.config = config
         self.lights: dict[str, dict[str, float]] = config[CONF_LIGHTS]
-        self.settings: dict[str, Any] = {s.key: s.default for s in NUMBER_SETTINGS} | {key: default for key, _, default, _ in TIME_SETTINGS}
+        self.settings: dict[str, Any] = {s.key: s.default for s in NUMBER_SETTINGS} | {key: default for key, _, default, _ in TIME_SETTINGS} | dict(OTHER_SETTINGS)
         self.auto = True
         self.auto_since = dt_util.now()
-        self.auto_until: datetime | None = None  # auto switches back on at this moment
         self.override = False
         self._override_end: dict[str, Any] = {}
         self.snapshot = Snapshot()
@@ -100,9 +99,9 @@ class ZoneController:
     # --- inputs from entities and actions ------------------------------------------------------------------------
 
     @callback
-    def restore_auto(self, on: bool, since: datetime, until: datetime | None) -> None:
+    def restore_auto(self, on: bool, since: datetime) -> None:
         """Restore the auto switch after a restart, without touching the lights."""
-        self.auto, self.auto_since, self.auto_until = on, since, until
+        self.auto, self.auto_since = on, since
 
     @callback
     def restore_override(self, until: str | None, deadline: datetime | None, phase: str | None) -> None:
@@ -117,10 +116,9 @@ class ZoneController:
             self.async_update()
 
     @callback
-    def set_auto(self, on: bool, until: str | None = None, transition: float | None = None) -> None:
-        """Auto on: follow the sun and manage the lights. Auto off: lights off, then leave them alone; optionally back on at the next solar noon."""
+    def set_auto(self, on: bool, transition: float | None = None) -> None:
+        """Auto on: follow the sun and manage the lights. Auto off: lights off, then leave them alone (until auto back on, if set)."""
         now = dt_util.now()
-        self.auto_until = self._next_noon(now) if not on and until == "noon" else None
         if on != self.auto:
             self.auto, self.auto_since = on, now
             self._paused.clear()
@@ -190,8 +188,8 @@ class ZoneController:
     @callback
     def async_update(self) -> None:
         now = dt_util.now()
-        if not self.auto and self.auto_until is not None and now >= self.auto_until:
-            self.auto, self.auto_since, self.auto_until = True, now, None
+        if not self.auto and (back_on := self.auto_until) is not None and now >= back_on:
+            self.auto, self.auto_since = True, now
             self._last_kind = None
         if self.override and self._override_expired(now):
             self.override, self._override_end = False, {}
@@ -308,7 +306,7 @@ class ZoneController:
         return Observer(self.hass.config.latitude, self.hass.config.longitude)
 
     def _off_hours(self) -> curve.OffHours:
-        return curve.OffHours(**{k: self.settings[k] for k, _, _, _ in TIME_SETTINGS}, fade=self.settings["off_fade"])
+        return curve.OffHours(**{k: self.settings[k] for k in ("off_weekday", "on_weekday", "off_weekend", "on_weekend")}, fade=self.settings["off_fade"])
 
     def _color_temp(self) -> curve.ColorTemp:
         s = self.settings
@@ -322,10 +320,21 @@ class ZoneController:
         _, highest, lowest, noon_at = self._day_cache
         return noon_at, highest, lowest
 
-    def _next_noon(self, now: datetime) -> datetime:
+    def _next_noon(self, after: datetime) -> datetime:
+        """First solar noon after `after`."""
         tz = dt_util.get_default_time_zone()
-        today = noon(self._observer(), now.date(), tz)
-        return today if now < today else noon(self._observer(), now.date() + timedelta(days=1), tz)
+        today = noon(self._observer(), after.date(), tz)
+        return today if after < today else noon(self._observer(), after.date() + timedelta(days=1), tz)
+
+    @property
+    def auto_until(self) -> datetime | None:
+        """When auto switches back on by itself: the first noon or set time after it went off, if 'auto back on' is set."""
+        if self.auto or not self.settings["auto_back_on"]:
+            return None
+        if self.settings["auto_back_on_at"] == "noon":
+            return self._next_noon(self.auto_since)
+        at = datetime.combine(self.auto_since.date(), self.settings["auto_back_on_time"], self.auto_since.tzinfo)
+        return at if at > self.auto_since else at + timedelta(days=1)
 
     def _lux_mean(self, now: datetime) -> float | None:
         """Smoothed lux (mean of log10 over the smoothing window), or None to fall back to the sun model."""

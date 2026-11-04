@@ -2,7 +2,7 @@ blueprint:
   name: Daylight Zones – sleep mode
   description: >-
     When sleep mode switches on, turn the chosen zones off, with a fade.
-    Each zone switches itself back on at the next solar noon.
+    A zone comes back on by itself if its 'Auto back on' setting is on (at solar noon or a set time).
   domain: automation
   source_url: https://github.com/jghek/ha-daylight-zones/blob/main/blueprints/automation/daylight_zones/sleep_mode.yaml
   input:
@@ -31,5 +31,4 @@ actions:
   - action: daylight_zones.auto_off
     data:
       zone: !input zones
-      until: noon
       transition: !input transition

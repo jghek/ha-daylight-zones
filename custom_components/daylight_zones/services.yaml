@@ -9,10 +9,6 @@ auto_on:
 auto_off:
   fields:
     zone: *zone
-    until:
-      selector:
-        select:
-          options: [noon]
     transition:
       selector:
         number: {min: 0, max: 300, unit_of_measurement: s}

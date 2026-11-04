@@ -12,7 +12,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN, SUBENTRY_ZONE, UNTIL
 from .zone import ZoneController
 
-PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH, Platform.TIME]
+PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH, Platform.TIME]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type DaylightZonesEntry = ConfigEntry[dict[str, ZoneController]]
@@ -20,7 +20,7 @@ type DaylightZonesEntry = ConfigEntry[dict[str, ZoneController]]
 ZONES = vol.All(cv.ensure_list, [cv.string])
 SCHEMAS = {
     "auto_on": vol.Schema({vol.Required("zone"): ZONES}),
-    "auto_off": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("until"): vol.In(["noon"]), vol.Optional("transition"): vol.All(vol.Coerce(float), vol.Range(min=0, max=300))}),
+    "auto_off": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("transition"): vol.All(vol.Coerce(float), vol.Range(min=0, max=300))}),
     "auto_toggle": vol.Schema({vol.Required("zone"): ZONES}),
     "override_on": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("level"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)), vol.Optional("until", default="noon"): vol.In(UNTIL), vol.Optional("duration"): cv.positive_time_period}),
     "override_off": vol.Schema({vol.Required("zone"): ZONES}),
@@ -28,7 +28,7 @@ SCHEMAS = {
 }
 HANDLERS = {
     "auto_on": lambda zone, data: zone.set_auto(True),
-    "auto_off": lambda zone, data: zone.set_auto(False, data.get("until"), data.get("transition")),
+    "auto_off": lambda zone, data: zone.set_auto(False, data.get("transition")),
     "auto_toggle": lambda zone, data: zone.toggle_auto(),
     "override_on": lambda zone, data: zone.set_override(True, data.get("level"), data["until"], data.get("duration")),
     "override_off": lambda zone, data: zone.set_override(False),

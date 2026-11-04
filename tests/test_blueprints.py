@@ -29,7 +29,7 @@ async def test_sleep_mode_blueprint(home, calls):
     await home.async_block_till_done()
     home.states.async_set("input_boolean.nightmode", "on")
     await home.async_block_till_done()
-    assert [c.data for c in turn_off] == [{"zone": [device(home, entry)], "until": "noon", "transition": 10}]
+    assert [c.data for c in turn_off] == [{"zone": [device(home, entry)], "transition": 10}]
 
 
 async def test_trigger_blueprint_toggles_override_on_a_door_contact(home, calls):

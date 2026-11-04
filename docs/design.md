@@ -33,6 +33,7 @@ Non-goals:
 | Zone | A group of lights with one set of settings. One config subentry, one HA device. A light belongs to at most one zone. |
 | Effective elevation (E) | The darkness axis, in degrees: the real solar elevation shifted by season, or derived from a lux sensor (§3). |
 | Auto | Switch. On: the zone follows the sun and manages its lights. Off: lights off, and the zone leaves them alone. |
+| Auto back on | Setting. When on, auto switches itself back on at the first solar noon or set time after it went off, however it went off. |
 | Override | Switch. On: the zone's lights at the override level, also when auto is off. Ends when switched off, at the latest the next solar noon. |
 | Brightness | `daylight` (curve over E, §4.1) or `fixed` (one level, §4.2). |
 | Off hours | `none`, `window` (fade out at the off time, back at the on time) or `switch_off` (fade out at the off time, then auto off) (§6). |
@@ -152,7 +153,7 @@ A night belongs to the evening it started: the nights of Friday and Saturday use
 | Mode | At the off time | Afterwards |
 |---|---|---|
 | `window` | fade to 0 over `off_fade` | 0 until the on time, then fade back up over `off_fade`; the brightness curve keeps applying (level = curve × off hours) |
-| `switch_off` | fade to 0 over `off_fade` | auto switches off. The zone stays off until it is switched on again; the next switch-off is the first off moment after that, so working late does not switch it off again the same night |
+| `switch_off` | fade to 0 over `off_fade` | auto switches off. The zone stays off until it is switched on again, or comes back by its auto-back-on setting; the next switch-off is the first off moment after that, so working late does not switch it off again the same night |
 
 Outdoor example (`window`, curve 0° → −10°, off 02:00, on 07:00, fade 30 min), at 52°N:
 
@@ -184,7 +185,8 @@ flowchart TD
 ```
 
 1. **Override** on: the override level, whatever auto is.
-2. **Auto** off: when auto switches off the lights go off (10 s fade, or the action's `transition`); after that the zone does not touch them.
+2. **Auto** off: when auto switches off the lights go off (10 s fade, or the action's `transition`); after that the zone does not touch them,
+   until auto is switched on again or the auto-back-on setting switches it on (first solar noon or set time after it went off).
 3. Otherwise: brightness (daylight curve or fixed level) × off hours.
 
 ## 8. Driving the lights
@@ -209,7 +211,7 @@ All take `zone`: one or more zone devices.
 | Action | Fields | Effect |
 |---|---|---|
 | `daylight_zones.auto_on` | | Auto on. |
-| `daylight_zones.auto_off` | `until` (`noon`), `transition` (s) | Auto off, lights off. With `until: noon`, auto switches back on at the next solar noon. |
+| `daylight_zones.auto_off` | `transition` (s) | Auto off, lights off. Whether it comes back by itself is the zone's auto-back-on setting. |
 | `daylight_zones.auto_toggle` | | Toggle auto. |
 | `daylight_zones.override_on` | `level` (%), `until` (`next_phase` / `noon` / `duration`, default `noon`), `duration` | Override on. |
 | `daylight_zones.override_off` | | Override off. |
@@ -222,7 +224,7 @@ All take `zone`: one or more zone devices.
 ### 9.3 Blueprints (in `blueprints/automation/daylight_zones/`)
 
 - **Trigger to zone action**: any trigger (a button press type, a detached Shelly input, a door contact, an event) runs one of the actions in §9.1 on the chosen zones.
-- **Sleep mode**: when a sleep-mode entity switches on, turn the chosen zones off with a fade, until the next solar noon.
+- **Sleep mode**: when a sleep-mode entity switches on, turn the chosen zones off with a fade. Zones with auto back on switched on come back by themselves.
 
 ## 10. Configuration
 
@@ -244,7 +246,10 @@ Entities for settings a zone does not use are not created.
 
 | Entity | Unit | Used when | Example |
 |---|---|---|---|
-| `switch.<zone>_auto` | | always | on; attribute `until` |
+| `switch.<zone>_auto` | | always | on; attribute `until`: when it comes back on by itself |
+| `switch.<zone>_auto_back_on` | | always | off |
+| `select.<zone>_auto_back_on_at` | `noon` / `time` | always | `noon` (solar noon) |
+| `time.<zone>_auto_back_on_time` | time | always | 12:00 |
 | `switch.<zone>_override` | | always | off; attribute `until` |
 | `sensor.<zone>_level` | % | always | attributes: phase, curve level, off-hours level, effective elevation, source, caps, auto, override, paused lights |
 | `sensor.<zone>_phase` | enum | always | `cosy` |
@@ -264,7 +269,7 @@ Entities for settings a zone does not use are not created.
 | `number.<zone>_off_hours_fade` | min | off hours | 30 |
 | `number.<zone>_override_level` | % | always | 80 |
 
-Settings, the auto switch and the override switch survive restarts, each with its `until`. An end that passed while Home Assistant was down takes effect on the first update after the restart.
+Settings, the auto switch and the override switch survive restarts. The moment auto comes back on is computed from when it went off and the current auto-back-on setting, so a setting changed while the zone is off applies at once. An end that passed while Home Assistant was down takes effect on the first update after the restart.
 
 ## 11. Implementation outline
 
@@ -293,7 +298,7 @@ so nobody at home notices the switch. New features are enabled afterwards. It is
 | Living room spots | `woonkamer_boekenkast` (90), `woonkamer_spots_wand` (100) | daylight 15° → 12°, morning 12° → 15° | none | later |
 | Office (new) | office lights | fixed 80 % | switch_off 22:00 | yes |
 
-- Sleep mode: the sleep-mode blueprint with `input_boolean.nightmode` turns Hallway and both Living room zones off until noon (today: off with a 10 s fade).
+- Sleep mode: the sleep-mode blueprint with `input_boolean.nightmode` turns Hallway and both Living room zones off with a 10 s fade; those zones have auto back on at solar noon. The office keeps auto back on off.
 - The office is switched by a trigger-to-zone-action automation (detached Shelly input or door contact → toggle the office zone).
 - Removed afterwards:
   - template sensors `indoor_nightcompensation_sun`, `outdoor_nightcompensation_sun`, `nightcompensation_time`, `indoor_nightcompensation`, `outdoor_nightcompensation`;

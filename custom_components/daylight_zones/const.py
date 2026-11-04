@@ -20,6 +20,9 @@ SOURCE_SUN, SOURCE_LUX = "sun", "lux"
 BRIGHTNESS_DAYLIGHT, BRIGHTNESS_FIXED = "daylight", "fixed"
 OFF_HOURS_NONE, OFF_HOURS_WINDOW, OFF_HOURS_SWITCH_OFF = "none", "window", "switch_off"
 UNTIL = ["next_phase", "noon", "duration"]
+BACK_ON_AT = ["noon", "time"]
+# Settings that are neither numbers nor times: (key, default)
+OTHER_SETTINGS = (("auto_back_on", False), ("auto_back_on_at", "noon"))
 PHASES = ["day", "evening_ramp", "peak", "settle", "cosy", "morning_ramp", "on", "off_fade", "off_hours", "on_fade", "override", "auto_off"]
 
 UPDATE_SECONDS = 60
@@ -67,6 +70,7 @@ NUMBER_SETTINGS = (
 )
 
 TIME_SETTINGS = (
+    ("auto_back_on_time", "Auto back on time", time(12), None),
     ("off_weekday", "Off weekday", time(0), "off_hours"),
     ("on_weekday", "On weekday", time(7), "window"),
     ("off_weekend", "Off weekend", time(2), "off_hours"),

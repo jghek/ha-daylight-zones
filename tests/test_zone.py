@@ -74,7 +74,8 @@ async def test_auto_off_turns_lights_off_and_leaves_them(home, calls, freezer):
     entry = await setup_zone(home)
     home.states.async_set("light.a", "on", {"brightness": 77}, context=Context())
     await home.async_block_till_done()
-    await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_auto_back_on"}, blocking=True)
+    await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)]}, blocking=True)
     assert last(calls, "light.a").service == "turn_off"
     assert state(home, "sensor.living_phase") == "auto_off"
     sent = count(calls, "light.a")
@@ -177,12 +178,14 @@ async def test_phase_changed_event(home, calls, freezer):
 async def test_settings_and_auto_survive_reload(home, calls):
     entry = await setup_zone(home)
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 35}, blocking=True)
-    await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_auto_back_on"}, blocking=True)
+    await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)]}, blocking=True)
     await home.config_entries.async_reload(entry.entry_id)
     await home.async_block_till_done()
     assert state(home, "number.living_cosy_level") == "35.0"
     assert state(home, "switch.living_auto") == "off"
     assert home.states.get("switch.living_auto").attributes["until"] is not None
+    assert state(home, "switch.living_auto_back_on") == "on"
 
 
 async def test_override_survives_reload(home, calls, freezer):
@@ -208,3 +211,51 @@ async def test_override_that_ended_during_a_restart_is_off_afterwards(home, call
     await home.async_block_till_done()
     assert state(home, "switch.living_override") == "off"
     assert state(home, "sensor.living_phase") == "cosy"
+
+
+async def move(hass, freezer, moment):
+    freezer.move_to(moment)
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+
+
+async def test_auto_stays_off_without_auto_back_on(home, calls, freezer):
+    await setup_zone(home)
+    assert state(home, "switch.living_auto_back_on") == "off"  # default
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_auto"}, blocking=True)
+    assert home.states.get("switch.living_auto").attributes["until"] is None
+    await move(home, freezer, "2026-11-05 14:00:00+01:00")
+    assert state(home, "switch.living_auto") == "off"
+
+
+async def test_auto_back_on_at_a_set_time(home, calls, freezer):
+    await setup_zone(home)
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_auto_back_on"}, blocking=True)
+    await home.services.async_call("select", "select_option", {"entity_id": "select.living_auto_back_on_at", "option": "time"}, blocking=True)
+    await home.services.async_call("time", "set_value", {"entity_id": "time.living_auto_back_on_time", "time": "10:00:00"}, blocking=True)
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_auto"}, blocking=True)  # 19:00
+    assert home.states.get("switch.living_auto").attributes["until"] == "2026-11-04T10:00:00+01:00"
+    await move(home, freezer, "2026-11-04 09:59:00+01:00")
+    assert state(home, "switch.living_auto") == "off"
+    await move(home, freezer, "2026-11-04 10:00:30+01:00")
+    assert state(home, "switch.living_auto") == "on"
+
+
+async def test_changing_auto_back_on_while_off_applies_at_once(home, calls, freezer):
+    await setup_zone(home)
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_auto"}, blocking=True)
+    await move(home, freezer, "2026-11-04 13:00:00+01:00")  # past solar noon, but auto back on was off
+    assert state(home, "switch.living_auto") == "off"
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_auto_back_on"}, blocking=True)
+    assert state(home, "switch.living_auto") == "on"  # the first noon after it went off has passed
+
+
+async def test_office_switch_off_stays_off_without_auto_back_on(home, calls, freezer):
+    freezer.move_to("2026-11-04 21:00:00+01:00")
+    await setup_zone(home, OFFICE, title="Office")
+    for key in ("off_weekday", "off_weekend"):
+        await home.services.async_call("time", "set_value", {"entity_id": f"time.office_{key}", "time": "22:00:00"}, blocking=True)
+    await move(home, freezer, "2026-11-04 22:31:00+01:00")
+    assert state(home, "switch.office_auto") == "off"
+    await move(home, freezer, "2026-11-05 13:00:00+01:00")
+    assert state(home, "switch.office_auto") == "off"

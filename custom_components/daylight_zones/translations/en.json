@@ -92,15 +92,11 @@
     },
     "auto_off": {
       "name": "Turn off",
-      "description": "Switch auto off: lights off, and the zone leaves them alone.",
+      "description": "Switch auto off: lights off, and the zone leaves them alone until auto is switched on, or comes back on by the zone's 'Auto back on' setting.",
       "fields": {
         "zone": {
           "name": "Zones",
           "description": "Zone devices."
-        },
-        "until": {
-          "name": "Until",
-          "description": "noon: switch auto back on at the next solar noon."
         },
         "transition": {
           "name": "Transition",
