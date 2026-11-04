@@ -201,7 +201,7 @@ All take `zone`: one or more zone devices.
 | `daylight_zones.auto_on` | | Auto on. |
 | `daylight_zones.auto_off` | `transition` (s) | Auto off, lights off. Whether it comes back by itself is the zone's auto-back-on setting. |
 | `daylight_zones.auto_toggle` | | Toggle auto. |
-| `daylight_zones.override_on` | `level` (%), `until` (`next_phase` / `noon` / `duration`, default `noon`), `duration` | Override on. |
+| `daylight_zones.override_on` | `level` (%), `until` (`next_phase` / `noon` / `duration`, default `noon`), `duration` | Override on. A `level` given here is for this override only; without it the zone's override level is used. |
 | `daylight_zones.override_off` | | Override off. |
 | `daylight_zones.override_toggle` | | Toggle override (until the next solar noon). |
 
@@ -278,9 +278,9 @@ so nobody at home notices the switch. New features are enabled afterwards. It is
 | Zone | Lights (dimmer scale %) | Brightness | Off hours | Colour temperature |
 |---|---|---|---|---|
 | Outside | `terrasdeur_light`, `voordeur_light` (6); `shellydimmer2_48e7297d2798` (oprit, 100); `shellyprodm1pm_fce8c0d81a74` (tuin achter, 15); `kantoor_buiten_achter`, `kantoor_buiten_voor` (8); `shellyprodm1pm_a0dd6c9e2390_light_0` (tuin voor, 15) | daylight 0° → −10°, morning −10° → 0° | window, schedule Mon–Fri 00:00–07:00, Sat–Sun 02:00–10:00 | no |
-| Hallway | `gang_achter`, `gang_trap`, `gang_voordeur`, `gang_woonkamer` (4) | daylight 15° → 12°, morning 12° → 15° | window, the same schedule | later |
-| Living room mood | `woonkamer_sfeer_no`, `_nw`, `_zo`, `_zw`, `_tv` (100) | daylight 15° → 12°, morning 12° → 15° | none | later |
-| Living room spots | `woonkamer_boekenkast` (90), `woonkamer_spots_wand` (100) | daylight 15° → 12°, morning 12° → 15° | none | later |
+| Hallway | `gang_achter`, `gang_trap`, `gang_voordeur`, `gang_woonkamer` (4) | daylight 10° → 3°, morning 3° → 10° | window, the same schedule | later |
+| Living room mood | `woonkamer_sfeer_no`, `_nw`, `_zo`, `_zw`, `_tv` (100) | daylight 10° → 3°, morning 3° → 10° | none | later |
+| Living room spots | `woonkamer_boekenkast` (90), `woonkamer_spots_wand` (100) | daylight 10° → 3°, morning 3° → 10° | none | later |
 | Office (new) | `kantoor_voor`, `kantoor_achter` (WW/CW template lights) | fixed 80 % | switch_off, a schedule with a 22:00–24:00 block each day | yes |
 
 - Sleep mode: the sleep-mode blueprint with `input_boolean.nightmode` turns Hallway and both Living room zones off with a 10 s fade; those zones have auto back on at solar noon. The office keeps auto back on off.

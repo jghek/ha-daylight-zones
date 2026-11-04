@@ -106,10 +106,10 @@ class ZoneController:
         self.auto, self.auto_since = on, since
 
     @callback
-    def restore_override(self, until: str | None, deadline: datetime | None, phase: str | None) -> None:
+    def restore_override(self, until: str | None, deadline: datetime | None, phase: str | None, level: float | None = None) -> None:
         """Restore an active override after a restart; an end that passed meanwhile ends it on the first update."""
         self.override = True
-        self._override_end = {"until": until, "deadline": deadline, "phase": phase}
+        self._override_end = {"until": until, "deadline": deadline, "phase": phase, "level": level}
 
     @callback
     def set_setting(self, key: str, value: Any) -> None:
@@ -137,14 +137,12 @@ class ZoneController:
     def set_override(self, on: bool, level: float | None = None, until: str = "noon", duration: timedelta | None = None) -> None:
         """Override on: the zone's lights at the override level, also when auto is off."""
         now = dt_util.now()
-        if level is not None:
-            self.settings["override_level"] = level
         was = self.override
         self.override = on
         self._override_end = {}
         if on:
             deadline = self._next_noon(now) if until == "noon" else now + (duration or timedelta(hours=1)) if until == "duration" else None
-            self._override_end = {"until": until, "deadline": deadline, "phase": self._base_phase}
+            self._override_end = {"until": until, "deadline": deadline, "phase": self._base_phase, "level": level}  # a level here is for this override only
         self._paused.clear()
         self._last_kind = None
         if was and not on and not self.auto:
@@ -230,7 +228,7 @@ class ZoneController:
         self._base_phase = base_phase
 
         if self.override:
-            target, phase = self.settings["override_level"], "override"
+            target, phase = (self._override_end.get("level") if self._override_end.get("level") is not None else self.settings["override_level"]), "override"
         elif self.auto:
             target, phase = base_pct, base_phase
         else:

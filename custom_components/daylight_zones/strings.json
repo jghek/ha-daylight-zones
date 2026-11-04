@@ -124,7 +124,7 @@
         },
         "level": {
           "name": "Level",
-          "description": "Override level; leave empty to keep the zone's override level."
+          "description": "Level for this override only; leave empty to use the zone's override level."
         },
         "until": {
           "name": "Until",

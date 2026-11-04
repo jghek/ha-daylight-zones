@@ -62,7 +62,7 @@ class OverrideSwitch(ZoneEntity, SwitchEntity, RestoreEntity):
         await super().async_added_to_hass()
         if (last := await self.async_get_last_state()) is not None and last.state == STATE_ON:
             until = dt_util.parse_datetime(last.attributes["until"]) if last.attributes.get("until") else None
-            self.zone.restore_override(last.attributes.get("ends"), until, last.attributes.get("phase"))
+            self.zone.restore_override(last.attributes.get("ends"), until, last.attributes.get("phase"), last.attributes.get("level"))
 
     @property
     def is_on(self) -> bool:
@@ -72,7 +72,7 @@ class OverrideSwitch(ZoneEntity, SwitchEntity, RestoreEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         end = self.zone.override_end
         until: datetime | None = end.get("deadline")
-        return {"until": until.isoformat() if until else None, "ends": end.get("until"), "phase": end.get("phase")}
+        return {"until": until.isoformat() if until else None, "ends": end.get("until"), "phase": end.get("phase"), "level": end.get("level")}
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self.zone.set_override(True)

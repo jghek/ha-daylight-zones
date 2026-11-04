@@ -292,3 +292,16 @@ async def test_dim_light_stays_off_until_it_gets_one_brightness_step(home, calls
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 20}, blocking=True)
     await tick(home, freezer)
     assert last(calls, "light.a").data["brightness"] == 2  # 20 % × 4 % = 0.8 % → 2 of 255
+
+
+async def test_override_level_from_the_action_does_not_change_the_setting(home, calls, freezer):
+    entry = await setup_zone(home)
+    await home.services.async_call(DOMAIN, "override_on", {"zone": [device(home, entry)], "level": 50}, blocking=True)
+    assert state(home, "sensor.living_level") == "50.0"
+    assert state(home, "number.living_override_level") == "80.0"
+    await home.config_entries.async_reload(entry.entry_id)
+    await home.async_block_till_done()
+    assert state(home, "sensor.living_level") == "50.0"  # survives a restart
+    await home.services.async_call(DOMAIN, "override_off", {"zone": [device(home, entry)]}, blocking=True)
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_override"}, blocking=True)
+    assert state(home, "sensor.living_level") == "80.0"  # the switch uses the setting
