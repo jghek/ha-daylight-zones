@@ -1,6 +1,6 @@
-"""Pure calculations for night compensation: no Home Assistant imports.
+"""Pure calculations for Daylight Zones: no Home Assistant imports.
 
-Levels are percentages (0-100), elevations are degrees.
+Levels are percentages (0-100), elevations are degrees, colour temperatures are kelvin.
 """
 
 from dataclasses import dataclass, replace
@@ -27,12 +27,21 @@ class Curve:
 
 
 @dataclass(frozen=True)
-class Schedule:
+class OffHours:
     off_weekday: time = time(0)
     on_weekday: time = time(7)
     off_weekend: time = time(2)
     on_weekend: time = time(10)
     fade: float = 30.0  # minutes
+
+
+@dataclass(frozen=True)
+class ColorTemp:
+    day: float = 5000.0      # K at day_elevation and above
+    dusk: float = 3500.0     # K at 0°
+    night: float = 2400.0    # K at night_elevation and below
+    day_elevation: float = 20.0
+    night_elevation: float = -8.0
 
 
 def season(day: date) -> float:
@@ -112,44 +121,76 @@ def morning_level(curve: Curve, e: float) -> tuple[float, str]:
     return 0.0, "day"
 
 
-def schedule_level(schedule: Schedule, now: datetime) -> tuple[float, str | None]:
-    """Bedtime schedule. A night belongs to the evening it started; Friday and Saturday nights use the weekend times."""
-    night = now.date() if now.time() >= NOON else now.date() - timedelta(days=1)
-    weekend = night.weekday() in (4, 5)
-    off_t, on_t = (schedule.off_weekend, schedule.on_weekend) if weekend else (schedule.off_weekday, schedule.on_weekday)
-    off = datetime.combine(night + timedelta(days=1 if off_t < NOON else 0), off_t, now.tzinfo)
+def color_temp(c: ColorTemp, e: float) -> float:
+    """Kelvin for an effective elevation: night below night_elevation, dusk at 0°, day above day_elevation."""
+    if e >= c.day_elevation:
+        return c.day
+    if e >= 0:
+        return _lerp(e, 0.0, c.day_elevation, c.dusk, c.day)
+    if e > c.night_elevation:
+        return _lerp(e, c.night_elevation, 0.0, c.night, c.dusk)
+    return c.night
+
+
+def _night(now: datetime) -> date:
+    """A night belongs to the evening it started: before noon is still the previous date's night."""
+    return now.date() if now.time() >= NOON else now.date() - timedelta(days=1)
+
+
+def _times(hours: OffHours, night: date) -> tuple[time, time]:
+    """Friday and Saturday nights use the weekend times."""
+    return (hours.off_weekend, hours.on_weekend) if night.weekday() in (4, 5) else (hours.off_weekday, hours.on_weekday)
+
+
+def _off_moment(hours: OffHours, night: date, tz) -> datetime:
+    off_t = _times(hours, night)[0]
+    return datetime.combine(night + timedelta(days=1 if off_t < NOON else 0), off_t, tz)
+
+
+def off_window_level(hours: OffHours, now: datetime) -> tuple[float, str | None]:
+    """Off hours with an end: fade to 0 at the off time, stay 0, fade back up from the on time."""
+    night = _night(now)
+    on_t = _times(hours, night)[1]
+    off = _off_moment(hours, night, now.tzinfo)
     on = datetime.combine(night + timedelta(days=1), on_t, now.tzinfo)
-    fade = timedelta(minutes=schedule.fade)
+    fade = timedelta(minutes=hours.fade)
     if now < off:
         return 100.0, None
     if now < off + fade:
-        return 100.0 * (1 - (now - off) / fade), "bedtime_fade"
+        return 100.0 * (1 - (now - off) / fade), "off_fade"
     if now < on:
-        return 0.0, "night"
+        return 0.0, "off_hours"
     if now < on + fade:
-        return 100.0 * (now - on) / fade, "wake_fade"
+        return 100.0 * (now - on) / fade, "on_fade"
     return 100.0, None
 
 
-def base_level(curve_pct: float, curve_phase: str, schedule_pct: float, schedule_phase: str | None) -> tuple[float, str]:
-    """Curve × schedule; the schedule phase wins while the schedule is dimming."""
-    phase = schedule_phase if schedule_phase is not None and curve_pct > 0 else curve_phase
-    return curve_pct * schedule_pct / 100.0, phase
+def next_off(hours: OffHours, after: datetime) -> datetime:
+    """First off moment strictly after `after` (off hours without an end: the zone switches off then)."""
+    night = _night(after) - timedelta(days=1)
+    while (moment := _off_moment(hours, night, after.tzinfo)) <= after:
+        night += timedelta(days=1)
+    return moment
 
 
-def zone_level(base_pct: float, base_phase: str, *, mode: str, override_level: float, peak: float, sleep_on: bool, sleep_behaviour: str, sleep_level: float) -> tuple[float | None, str]:
-    """Apply pause, sleep and overrides in priority order (design §6). None means: leave the lights alone."""
-    if mode == "pause":
-        return None, "paused"
-    if sleep_on and sleep_behaviour != "ignore":
-        return (0.0 if sleep_behaviour == "off" else sleep_level), "sleep"
-    if mode == "boost":
-        return peak, "boost"
-    if mode == "max":
-        return 100.0, "max"
-    if mode == "level":
-        return override_level, "override"
-    return base_pct, base_phase
+def switch_off_level(hours: OffHours, now: datetime, auto_on_since: datetime) -> tuple[float, str | None, bool]:
+    """Off hours without an end: from the first off moment after the zone was switched on, fade out, then switch off.
+
+    Like the window mode, the fade starts at the off time. Returns (level, phase, switch_off_now).
+    """
+    moment = next_off(hours, auto_on_since)
+    fade = timedelta(minutes=hours.fade)
+    if now < moment:
+        return 100.0, None, False
+    if now < moment + fade:
+        return 100.0 * (1 - (now - moment) / fade), "off_fade", False
+    return 0.0, "off_fade", True
+
+
+def base_level(curve_pct: float, curve_phase: str, hours_pct: float, hours_phase: str | None) -> tuple[float, str]:
+    """Curve (or fixed level) × off hours; the off-hours phase wins while it is dimming."""
+    phase = hours_phase if hours_phase is not None and curve_pct > 0 else curve_phase
+    return curve_pct * hours_pct / 100.0, phase
 
 
 def light_brightness(level: float, max_pct: float, min_pct: float) -> float:

@@ -7,7 +7,7 @@ from astral import Observer
 from astral.sun import SunDirection, elevation, midnight, noon, time_at_elevation
 import pytest
 
-from custom_components.night_compensation import curve
+from custom_components.daylight_zones import curve
 
 TZ = ZoneInfo("Europe/Amsterdam")
 OBSERVER = Observer(52.0, 5.0)  # generic central-Netherlands location
@@ -86,39 +86,68 @@ def test_example_timeline_3_november():
     assert level(at(-12) + timedelta(minutes=5)) == (60, "cosy")
 
 
-SCHEDULE = curve.Schedule(off_weekday=time(0), on_weekday=time(7), off_weekend=time(2), on_weekend=time(10), fade=30)
+HOURS = curve.OffHours(off_weekday=time(0), on_weekday=time(7), off_weekend=time(2), on_weekend=time(10), fade=30)
 
 
 @pytest.mark.parametrize(("moment", "level", "phase"), [
     ("2026-11-02 23:30", 100, None),            # Monday evening
-    ("2026-11-03 00:15", 50, "bedtime_fade"),   # Monday night, weekday off 00:00
-    ("2026-11-03 03:00", 0, "night"),
-    ("2026-11-03 07:15", 50, "wake_fade"),
+    ("2026-11-03 00:15", 50, "off_fade"),   # Monday night, weekday off 00:00
+    ("2026-11-03 03:00", 0, "off_hours"),
+    ("2026-11-03 07:15", 50, "on_fade"),
     ("2026-11-06 23:30", 100, None),            # Friday evening: weekend times
     ("2026-11-07 01:00", 100, None),            # Friday night, weekend off 02:00
-    ("2026-11-07 08:00", 0, "night"),           # weekend on 10:00
+    ("2026-11-07 08:00", 0, "off_hours"),           # weekend on 10:00
     ("2026-11-08 23:30", 100, None),            # Sunday evening: weekday times
-    ("2026-11-09 00:15", 50, "bedtime_fade"),
+    ("2026-11-09 00:15", 50, "off_fade"),
 ])
-def test_schedule(moment, level, phase):
+def test_off_window(moment, level, phase):
     now = datetime.fromisoformat(moment).replace(tzinfo=TZ)
-    assert curve.schedule_level(SCHEDULE, now) == pytest.approx((level, phase))
+    assert curve.off_window_level(HOURS, now) == pytest.approx((level, phase))
 
 
-def test_schedule_off_before_midnight_stays_off():
+def test_off_before_midnight_stays_off():
     """The current templates turn lights back on after the fade when the off time is before midnight."""
-    early = curve.Schedule(off_weekday=time(23), on_weekday=time(7), off_weekend=time(23), on_weekend=time(7), fade=30)
-    assert curve.schedule_level(early, datetime(2026, 11, 2, 23, 45, tzinfo=TZ))[0] == 0
+    early = curve.OffHours(off_weekday=time(23), on_weekday=time(7), off_weekend=time(23), on_weekend=time(7), fade=30)
+    assert curve.off_window_level(early, datetime(2026, 11, 2, 23, 45, tzinfo=TZ))[0] == 0
 
 
-def test_zone_level_priorities():
-    common = dict(override_level=80, peak=100, sleep_behaviour="off", sleep_level=0)
-    assert curve.zone_level(40, "cosy", mode="pause", sleep_on=True, **common) == (None, "paused")
-    assert curve.zone_level(40, "cosy", mode="boost", sleep_on=True, **common) == (0, "sleep")
-    assert curve.zone_level(40, "cosy", mode="boost", sleep_on=False, **common) == (100, "boost")
-    assert curve.zone_level(40, "cosy", mode="level", sleep_on=False, **common) == (80, "override")
-    assert curve.zone_level(40, "cosy", mode="auto", sleep_on=False, **common) == (40, "cosy")
-    assert curve.zone_level(40, "cosy", mode="auto", sleep_on=True, override_level=80, peak=100, sleep_behaviour="ignore", sleep_level=0) == (40, "cosy")
+OFFICE = curve.OffHours(off_weekday=time(22), off_weekend=time(22), fade=15)
+
+
+def test_next_off_is_the_first_off_moment_after_switching_on():
+    at = lambda moment: datetime.fromisoformat(moment).replace(tzinfo=TZ)
+    assert curve.next_off(OFFICE, at("2026-11-04 08:30")) == at("2026-11-04 22:00")
+    assert curve.next_off(OFFICE, at("2026-11-04 23:10")) == at("2026-11-05 22:00")  # working late: not switched off again tonight
+    assert curve.next_off(HOURS, at("2026-11-04 08:30")) == at("2026-11-05 00:00")  # weekday off time after midnight
+
+
+@pytest.mark.parametrize(("moment", "level", "phase", "switch_off"), [
+    ("2026-11-04 21:59", 100, None, False),
+    ("2026-11-04 22:05", 66.67, "off_fade", False),  # the fade starts at the off time
+    ("2026-11-04 22:15", 0, "off_fade", True),
+])
+def test_switch_off(moment, level, phase, switch_off):
+    now = datetime.fromisoformat(moment).replace(tzinfo=TZ)
+    assert curve.switch_off_level(OFFICE, now, datetime(2026, 11, 4, 8, 30, tzinfo=TZ)) == pytest.approx((level, phase, switch_off), abs=0.01)
+
+
+def test_switch_off_after_working_late_waits_for_tomorrow():
+    switched_on = datetime(2026, 11, 4, 23, 10, tzinfo=TZ)
+    assert curve.switch_off_level(OFFICE, datetime(2026, 11, 4, 23, 30, tzinfo=TZ), switched_on) == (100, None, False)
+
+
+CT = curve.ColorTemp(day=5000, dusk=3500, night=2400, day_elevation=20, night_elevation=-8)
+
+
+@pytest.mark.parametrize(("e", "kelvin"), [(40, 5000), (20, 5000), (10, 4250), (0, 3500), (-4, 2950), (-8, 2400), (-30, 2400)])
+def test_color_temp_follows_elevation(e, kelvin):
+    assert curve.color_temp(CT, e) == pytest.approx(kelvin)
+
+
+def test_base_level_off_hours_phase_wins_while_dimming():
+    assert curve.base_level(60, "cosy", 50, "off_fade") == (30, "off_fade")
+    assert curve.base_level(0, "day", 0, "off_hours") == (0, "day")
+    assert curve.base_level(80, "on", 100, None) == (80, "on")
 
 
 def test_light_brightness():
@@ -164,4 +193,4 @@ def test_schedule_matches_templates_over_a_week():
     start = datetime(2026, 11, 2, tzinfo=TZ)  # Monday
     for minute in range(0, 7 * 24 * 60, 5):
         now = start + timedelta(minutes=minute)
-        assert curve.schedule_level(SCHEDULE, now)[0] == pytest.approx(100 * old_time_factor(now), abs=1e-6), now
+        assert curve.off_window_level(HOURS, now)[0] == pytest.approx(100 * old_time_factor(now), abs=1e-6), now

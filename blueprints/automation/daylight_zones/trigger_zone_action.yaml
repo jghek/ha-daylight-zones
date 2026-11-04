@@ -1,0 +1,46 @@
+blueprint:
+  name: Daylight Zones – trigger to zone action
+  description: >-
+    Run a Daylight Zones action when something happens: a button press (also a detached Shelly input),
+    a door contact, any event. For example: office door opens → turn the office zone on.
+  domain: automation
+  source_url: https://github.com/jghek/ha-daylight-zones/blob/main/blueprints/automation/daylight_zones/trigger_zone_action.yaml
+  input:
+    triggers:
+      name: Triggers
+      description: What starts the action. Add one trigger per button press type, door contact or event.
+      selector:
+        trigger: {}
+    zones:
+      name: Zones
+      selector:
+        device:
+          integration: daylight_zones
+          multiple: true
+    zone_action:
+      name: Action
+      default: toggle
+      selector:
+        select:
+          options:
+            - label: "Auto: toggle"
+              value: toggle
+            - label: "Auto: on (follow the sun)"
+              value: turn_on
+            - label: "Auto: off (lights off)"
+              value: turn_off
+            - label: "Override: toggle"
+              value: toggle_override
+            - label: "Override: on"
+              value: set_override
+            - label: "Override: off"
+              value: clear_override
+mode: queued
+max_exceeded: silent
+variables:
+  zone_action: !input zone_action
+triggers: !input triggers
+actions:
+  - action: "daylight_zones.{{ zone_action }}"
+    data:
+      zone: !input zones

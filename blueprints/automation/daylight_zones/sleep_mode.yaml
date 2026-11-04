@@ -1,0 +1,35 @@
+blueprint:
+  name: Daylight Zones – sleep mode
+  description: >-
+    When sleep mode switches on, turn the chosen zones off, with a fade.
+    Each zone switches itself back on at the next solar noon.
+  domain: automation
+  source_url: https://github.com/jghek/ha-daylight-zones/blob/main/blueprints/automation/daylight_zones/sleep_mode.yaml
+  input:
+    sleep_entity:
+      name: Sleep mode
+      selector:
+        entity:
+          domain: [input_boolean, switch, binary_sensor]
+    zones:
+      name: Zones
+      selector:
+        device:
+          integration: daylight_zones
+          multiple: true
+    transition:
+      name: Fade
+      default: 10
+      selector:
+        number: {min: 0, max: 300, unit_of_measurement: s}
+mode: single
+triggers:
+  - trigger: state
+    entity_id: !input sleep_entity
+    to: "on"
+actions:
+  - action: daylight_zones.turn_off
+    data:
+      zone: !input zones
+      until: noon
+      transition: !input transition

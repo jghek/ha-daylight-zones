@@ -5,10 +5,13 @@ from typing import Any
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
-from custom_components.night_compensation.const import DOMAIN, SUBENTRY_ZONE
+from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
 
 LIGHTS = {"light.a": {"max": 50, "min": 0}, "light.b": {"max": 100, "min": 10}}
-ZONE = {"lights": LIGHTS, "source": "sun", "lux_smoothing": 10, "sleep_entity": "input_boolean.sleep", "sleep_behaviour": "off", "use_schedule": True, "use_boost": True}
+ZONE = {"lights": LIGHTS, "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": True, "use_color_temp": False, "off_hours": "window"}
+OFFICE = {"lights": {"light.desk": {"max": 100, "min": 0}, "light.plain": {"max": 100, "min": 0}}, "source": "sun", "lux_smoothing": 10, "brightness": "fixed",
+          "use_boost": False, "use_color_temp": True, "off_hours": "switch_off"}
+CT_LIGHT = {"supported_color_modes": ["color_temp"], "min_color_temp_kelvin": 2700, "max_color_temp_kelvin": 6500}
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +26,8 @@ async def home(hass, freezer):
     freezer.move_to("2026-11-03 19:00:00+01:00")  # Tuesday evening, sun about -21°: cosy
     for light in LIGHTS:
         hass.states.async_set(light, "off")
-    hass.states.async_set("input_boolean.sleep", "off")
+    hass.states.async_set("light.desk", "off", CT_LIGHT)
+    hass.states.async_set("light.plain", "off", {"supported_color_modes": ["brightness"]})
     return hass
 
 
@@ -33,7 +37,7 @@ def calls(home):
 
 
 async def setup_zone(hass, zone: dict[str, Any] | None = None, title: str = "Living") -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="Night Compensation", subentries_data=[{"data": zone or ZONE, "subentry_type": SUBENTRY_ZONE, "title": title, "unique_id": None}])
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="Daylight Zones", subentries_data=[{"data": zone or ZONE, "subentry_type": SUBENTRY_ZONE, "title": title, "unique_id": None}])
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

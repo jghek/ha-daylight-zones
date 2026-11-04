@@ -14,7 +14,7 @@ class ZoneEntity(Entity):
     def __init__(self, zone: ZoneController, key: str) -> None:
         self.zone = zone
         self._attr_unique_id = f"{zone.subentry_id}_{key}"
-        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, zone.subentry_id)}, name=zone.name, entry_type=DeviceEntryType.SERVICE, manufacturer="Night Compensation")
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, zone.subentry_id)}, name=zone.name, entry_type=DeviceEntryType.SERVICE, manufacturer="Daylight Zones")
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

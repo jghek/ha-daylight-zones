@@ -1,4 +1,4 @@
-"""Bedtime schedule times; values survive restarts."""
+"""Off-hours times; values survive restarts."""
 
 from datetime import time
 
@@ -8,15 +8,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import NightCompensationEntry
+from . import DaylightZonesEntry
 from .const import TIME_SETTINGS, setting_used
 from .entity import ZoneEntity
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: NightCompensationEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry: DaylightZonesEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     for subentry_id, zone in entry.runtime_data.items():
-        if setting_used("schedule", zone.config):
-            async_add_entities([ScheduleTime(zone, key, name) for key, name, _ in TIME_SETTINGS], config_subentry_id=subentry_id)
+        async_add_entities([ScheduleTime(zone, key, name) for key, name, _, needs in TIME_SETTINGS if setting_used(needs, zone.config)], config_subentry_id=subentry_id)
 
 
 class ScheduleTime(ZoneEntity, TimeEntity, RestoreEntity):

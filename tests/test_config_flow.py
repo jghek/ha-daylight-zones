@@ -1,26 +1,27 @@
 from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.night_compensation.const import DOMAIN, SUBENTRY_ZONE
+from custom_components.daylight_zones.const import DOMAIN, SUBENTRY_ZONE
 
 from .conftest import setup_zone
 
-ZONE_FORM = {"name": "Hallway", "lights": ["light.c"], "source": "sun", "lux_smoothing": 10, "sleep_entity": "input_boolean.sleep", "sleep_behaviour": "off", "use_schedule": True, "use_boost": False}
+ZONE_FORM = {"name": "Hallway", "lights": ["light.c"], "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": False, "use_color_temp": False, "off_hours": "window"}
 
 
 async def test_create_entry(home):
     result = await home.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await home.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Night Compensation"
+    assert result["title"] == "Daylight Zones"
 
 
 async def test_add_zone_with_light_limits(home, calls):
     entry = await setup_zone(home)
+    home.states.async_set("light.c", "off", {"friendly_name": "Hall ceiling"})
     result = await home.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_ZONE), context={"source": SOURCE_USER})
     result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM)
     assert result["step_id"] == "lights"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"light.c max": 40, "light.c min": 5})
+    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"Hall ceiling – max %": 40, "Hall ceiling – min %": 5})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await home.async_block_till_done()
     hallway = next(s for s in entry.subentries.values() if s.title == "Hallway")
@@ -49,7 +50,7 @@ async def test_reconfigure_keeps_own_lights(home, calls):
     assert result["step_id"] == "reconfigure"
     result = await home.config_entries.subentries.async_configure(result["flow_id"], ZONE_FORM | {"name": "Living", "lights": ["light.a"], "use_boost": True})
     assert result["step_id"] == "lights"
-    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"light.a max": 70, "light.a min": 0})
+    result = await home.config_entries.subentries.async_configure(result["flow_id"], {"a – max %": 70, "a – min %": 0})
     assert result["type"] is FlowResultType.ABORT
     await home.async_block_till_done()
     assert entry.subentries[subentry_id].data["lights"] == {"light.a": {"max": 70, "min": 0}}

@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from .conftest import setup_zone
 from .test_curve import old_sun_factor, old_time_factor
 
-PORT = {"lights": {"light.a": {"max": 4, "min": 0}}, "source": "sun", "lux_smoothing": 10, "sleep_entity": None, "sleep_behaviour": "ignore", "use_schedule": True, "use_boost": False}
+PORT = {"lights": {"light.a": {"max": 4, "min": 0}}, "source": "sun", "lux_smoothing": 10, "brightness": "daylight", "use_boost": False, "use_color_temp": False, "off_hours": "window"}
 SETTINGS = {"evening_ramp_start": 15, "evening_ramp_full": 12, "cosy_level": 100, "morning_ramp_start": 12, "morning_off": 15, "maximum_step": 100}
 
 

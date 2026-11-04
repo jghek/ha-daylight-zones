@@ -5,12 +5,12 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import NightCompensationEntry
+from . import DaylightZonesEntry
 from .const import NUMBER_SETTINGS, NumberSetting, setting_used
 from .entity import ZoneEntity
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: NightCompensationEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry: DaylightZonesEntry, async_add_entities: AddConfigEntryEntitiesCallback) -> None:
     for subentry_id, zone in entry.runtime_data.items():
         async_add_entities([SettingNumber(zone, s) for s in NUMBER_SETTINGS if setting_used(s.needs, zone.config)], config_subentry_id=subentry_id)
 

@@ -1,0 +1,164 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Add Daylight Zones. Zones are added afterwards, from the integration page."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Daylight Zones is already set up."
+    }
+  },
+  "config_subentries": {
+    "zone": {
+      "entry_type": "Zone",
+      "initiate_flow": {
+        "user": "Add zone"
+      },
+      "step": {
+        "user": {
+          "title": "Zone",
+          "data": {
+            "name": "Name",
+            "lights": "Lights",
+            "source": "Darkness source",
+            "lux_sensor": "Lux sensor",
+            "lux_smoothing": "Lux smoothing",
+            "brightness": "Brightness",
+            "use_boost": "Dusk boost (daylight brightness only)",
+            "use_color_temp": "Colour temperature follows daylight",
+            "off_hours": "Off hours"
+          }
+        },
+        "reconfigure": {
+          "title": "Zone",
+          "data": {
+            "name": "Name",
+            "lights": "Lights",
+            "source": "Darkness source",
+            "lux_sensor": "Lux sensor",
+            "lux_smoothing": "Lux smoothing",
+            "brightness": "Brightness",
+            "use_boost": "Dusk boost (daylight brightness only)",
+            "use_color_temp": "Colour temperature follows daylight",
+            "off_hours": "Off hours"
+          }
+        },
+        "lights": {
+          "title": "Light limits",
+          "description": "Maximum and minimum brightness per light, as % of its full brightness."
+        }
+      },
+      "error": {
+        "light_in_other_zone": "One of these lights already belongs to another zone.",
+        "lux_sensor_required": "Choose a lux sensor, or use the sun as source."
+      },
+      "abort": {
+        "reconfigure_successful": "Zone updated."
+      }
+    }
+  },
+  "selector": {
+    "source": {
+      "options": {
+        "sun": "Sun position",
+        "lux": "Lux sensor (sun position as fallback)"
+      }
+    },
+    "brightness": {
+      "options": {
+        "daylight": "Follows daylight (evening ramp, optional boost, cosy, morning ramp)",
+        "fixed": "Fixed level whenever the zone is on"
+      }
+    },
+    "off_hours": {
+      "options": {
+        "none": "None",
+        "window": "Off and on times: fade to off, come back at the on time",
+        "switch_off": "Off time only: fade out and switch the zone off"
+      }
+    }
+  },
+  "services": {
+    "turn_on": {
+      "name": "Turn on",
+      "description": "Switch auto on: follow the sun and manage the lights.",
+      "fields": {
+        "zone": {
+          "name": "Zones",
+          "description": "Zone devices."
+        }
+      }
+    },
+    "turn_off": {
+      "name": "Turn off",
+      "description": "Switch auto off: lights off, and the zone leaves them alone.",
+      "fields": {
+        "zone": {
+          "name": "Zones",
+          "description": "Zone devices."
+        },
+        "until": {
+          "name": "Until",
+          "description": "noon: switch auto back on at the next solar noon."
+        },
+        "transition": {
+          "name": "Transition",
+          "description": "Fade time in seconds."
+        }
+      }
+    },
+    "toggle": {
+      "name": "Toggle",
+      "description": "Toggle auto.",
+      "fields": {
+        "zone": {
+          "name": "Zones",
+          "description": "Zone devices."
+        }
+      }
+    },
+    "set_override": {
+      "name": "Set override",
+      "description": "Lights at a set level, also when auto is off; for example for visitors.",
+      "fields": {
+        "zone": {
+          "name": "Zones",
+          "description": "Zone devices."
+        },
+        "level": {
+          "name": "Level",
+          "description": "Override level; leave empty to keep the zone's override level."
+        },
+        "until": {
+          "name": "Until",
+          "description": "next_phase, the next solar noon, or after a duration."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "For until: duration."
+        }
+      }
+    },
+    "clear_override": {
+      "name": "Clear override",
+      "description": "End the override.",
+      "fields": {
+        "zone": {
+          "name": "Zones",
+          "description": "Zone devices."
+        }
+      }
+    },
+    "toggle_override": {
+      "name": "Toggle override",
+      "description": "Switch the override on (at the zone's override level, until the next solar noon) or off.",
+      "fields": {
+        "zone": {
+          "name": "Zones",
+          "description": "Zone devices."
+        }
+      }
+    }
+  }
+}

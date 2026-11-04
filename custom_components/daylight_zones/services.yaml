@@ -1,16 +1,27 @@
-set_override:
+turn_on:
   fields:
-    zone:
+    zone: &zone
       required: true
       selector:
         device:
-          integration: night_compensation
+          integration: daylight_zones
           multiple: true
-    mode:
-      required: true
+turn_off:
+  fields:
+    zone: *zone
+    until:
       selector:
         select:
-          options: [boost, max, level, pause]
+          options: [noon]
+    transition:
+      selector:
+        number: {min: 0, max: 300, unit_of_measurement: s}
+toggle:
+  fields:
+    zone: *zone
+set_override:
+  fields:
+    zone: *zone
     level:
       selector:
         number: {min: 0, max: 100, unit_of_measurement: "%"}
@@ -24,9 +35,7 @@ set_override:
         duration: {}
 clear_override:
   fields:
-    zone:
-      required: true
-      selector:
-        device:
-          integration: night_compensation
-          multiple: true
+    zone: *zone
+toggle_override:
+  fields:
+    zone: *zone

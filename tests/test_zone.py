@@ -7,13 +7,18 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_capture_events, async_fire_time_changed
 
-from custom_components.night_compensation.const import DOMAIN, EVENT_PHASE_CHANGED
+from custom_components.daylight_zones.const import DOMAIN, EVENT_PHASE_CHANGED
 
-from .conftest import setup_zone
+from .conftest import OFFICE, ZONE, setup_zone
 
 
 def last(calls, entity_id):
-    return next(c.data for c in reversed(calls) if c.data["entity_id"] == entity_id)
+    merged = [c for c in calls["on"] + calls["off"] if c.data["entity_id"] == entity_id]
+    return max(merged, key=lambda c: (calls["on"] + calls["off"]).index(c)) if merged else None
+
+
+def count(calls, entity_id):
+    return len([c for c in calls["on"] + calls["off"] if c.data["entity_id"] == entity_id])
 
 
 async def tick(hass, freezer, minutes=1):
@@ -22,50 +27,84 @@ async def tick(hass, freezer, minutes=1):
     await hass.async_block_till_done()
 
 
+def state(hass, entity_id):
+    return hass.states.get(entity_id).state
+
+
+def device(hass, entry):
+    subentry_id = next(iter(entry.subentries))
+    return dr.async_get(hass).async_get_device_by_identifier((DOMAIN, subentry_id), entry.entry_id).id
+
+
 async def test_entities_and_cosy_evening(home, calls):
     await setup_zone(home)
-    assert home.states.get("sensor.living_level").state == "60.0"
-    assert home.states.get("sensor.living_phase").state == "cosy"
-    assert home.states.get("number.living_cosy_level").state == "60.0"
-    assert home.states.get("time.living_lights_off_weekday").state == "00:00:00"
-    assert home.states.get("select.living_mode").state == "auto"
-    assert last(calls["on"], "light.a")["brightness"] == round(30 * 2.55)   # 60 % × max 50 %
-    assert last(calls["on"], "light.b")["brightness"] == round(60 * 2.55)
+    assert state(home, "sensor.living_level") == "60.0"
+    assert state(home, "sensor.living_phase") == "cosy"
+    assert state(home, "number.living_cosy_level") == "60.0"
+    assert state(home, "time.living_off_weekday") == "00:00:00"
+    assert state(home, "switch.living_auto") == "on"
+    assert state(home, "switch.living_override") == "off"
+    assert calls["on"][-2].data["brightness"] == round(30 * 2.55)  # light.a: 60 % × max 50 %
+    assert home.states.get("sensor.living_colour_temperature") is None
+    assert home.states.get("number.living_level") is None  # fixed-brightness setting not used here
 
 
 async def test_unused_settings_are_not_created(home, calls):
-    from .conftest import ZONE
-    await setup_zone(home, ZONE | {"use_boost": False, "use_schedule": False, "sleep_behaviour": "ignore"})
+    await setup_zone(home, ZONE | {"use_boost": False, "off_hours": "none"})
     assert home.states.get("number.living_boost_peak") is None
-    assert home.states.get("time.living_lights_off_weekday") is None
-    assert home.states.get("number.living_sleep_fade") is None
+    assert home.states.get("time.living_off_weekday") is None
+    assert home.states.get("number.living_off_hours_fade") is None
     assert home.states.get("number.living_cosy_level") is not None
 
 
 async def test_rate_limit_and_only_sending_changes(home, calls, freezer):
     await setup_zone(home)
     home.states.async_set("light.b", "on", {"brightness": round(60 * 2.55)}, context=Context())  # device confirms our command
-    sent = len(calls["on"])
+    sent = count(calls, "light.b")
     await tick(home, freezer)
-    assert len(calls["on"]) == sent  # nothing changed, nothing sent
+    assert count(calls, "light.b") == sent
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 20}, blocking=True)
-    assert float(home.states.get("sensor.living_level").state) > 59  # no time elapsed yet: hardly any step
     await tick(home, freezer, 2)
-    assert 49 <= float(home.states.get("sensor.living_level").state) <= 51  # max 5 %/min
+    assert 49 <= float(state(home, "sensor.living_level")) <= 51  # max 5 %/min
     await tick(home, freezer, 10)
-    assert home.states.get("sensor.living_level").state == "20.0"
+    assert state(home, "sensor.living_level") == "20.0"
 
 
-async def test_sleep_turns_off_with_fade_and_clears_boost(home, calls, freezer):
+async def test_auto_off_turns_lights_off_and_leaves_them(home, calls, freezer):
     entry = await setup_zone(home)
-    zone_device = _device(home, entry)
-    await home.services.async_call(DOMAIN, "set_override", {"zone": [zone_device], "mode": "boost"}, blocking=True)
-    assert home.states.get("sensor.living_level").state == "100.0"
-    home.states.async_set("input_boolean.sleep", "on")
+    home.states.async_set("light.a", "on", {"brightness": 77}, context=Context())
     await home.async_block_till_done()
-    assert home.states.get("sensor.living_phase").state == "sleep"
-    assert last(calls["off"], "light.a")["transition"] == 10
-    assert home.states.get("select.living_mode").state == "auto"
+    await home.services.async_call(DOMAIN, "turn_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
+    assert last(calls, "light.a").service == "turn_off"
+    assert state(home, "sensor.living_phase") == "auto_off"
+    sent = count(calls, "light.a")
+    home.states.async_set("light.a", "on", {"brightness": 200}, context=Context())  # someone switches it on: left alone
+    await tick(home, freezer, 5)
+    assert count(calls, "light.a") == sent
+    freezer.move_to("2026-11-04 12:30:00+01:00")  # past solar noon: auto comes back
+    async_fire_time_changed(home, dt_util.utcnow())
+    await home.async_block_till_done()
+    assert state(home, "switch.living_auto") == "on"
+
+
+async def test_override_switch_also_works_when_auto_is_off(home, calls, freezer):
+    await setup_zone(home)
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_auto"}, blocking=True)
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_override"}, blocking=True)
+    assert state(home, "sensor.living_level") == "80.0"
+    assert last(calls, "light.b").data["brightness"] == round(80 * 2.55)
+    home.states.async_set("light.b", "on", {"brightness": 204}, context=Context())  # the light reports our command
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_override"}, blocking=True)
+    assert last(calls, "light.b").service == "turn_off"  # auto is off, so the lights go off
+
+
+async def test_override_until_duration(home, calls, freezer):
+    entry = await setup_zone(home)
+    await home.services.async_call(DOMAIN, "set_override", {"zone": [device(home, entry)], "level": 90, "until": "duration", "duration": {"minutes": 30}}, blocking=True)
+    assert state(home, "sensor.living_level") == "90.0"
+    await tick(home, freezer, 31)
+    assert state(home, "switch.living_override") == "off"
+    assert state(home, "sensor.living_phase") == "cosy"
 
 
 async def test_manual_change_pauses_light_until_next_phase(home, calls, freezer):
@@ -74,50 +113,73 @@ async def test_manual_change_pauses_light_until_next_phase(home, calls, freezer)
     home.states.async_set("light.a", "on", {"brightness": 255}, context=Context())  # wall switch, not ours
     await home.async_block_till_done()
     assert home.states.get("sensor.living_level").attributes["paused_lights"] == ["light.a"]
-    sent = len([c for c in calls["on"] if c.data["entity_id"] == "light.a"])
+    sent = count(calls, "light.a")
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 40}, blocking=True)
-    assert len([c for c in calls["on"] if c.data["entity_id"] == "light.a"]) == sent
-    freezer.move_to("2026-11-04 00:10:00+01:00")  # bedtime fade starts: next phase
+    assert count(calls, "light.a") == sent
+    freezer.move_to("2026-11-04 00:10:00+01:00")  # off hours start: next phase
     async_fire_time_changed(home, dt_util.utcnow())
     await home.async_block_till_done()
-    assert home.states.get("sensor.living_phase").state == "bedtime_fade"
+    assert state(home, "sensor.living_phase") == "off_fade"
     assert home.states.get("sensor.living_level").attributes["paused_lights"] == []
 
 
-async def test_pause_override_leaves_lights_alone(home, calls, freezer):
-    await setup_zone(home)
-    await home.services.async_call("select", "select_option", {"entity_id": "select.living_mode", "option": "pause"}, blocking=True)
-    sent = len(calls["on"]) + len(calls["off"])
-    home.states.async_set("input_boolean.sleep", "on")
+async def test_office_fixed_level_color_temp_and_switch_off(home, calls, freezer):
+    freezer.move_to("2026-11-04 13:00:00+01:00")  # sun about 22°: day colour
+    await setup_zone(home, OFFICE, title="Office")
+    for key in ("off_weekday", "off_weekend"):
+        await home.services.async_call("time", "set_value", {"entity_id": f"time.office_{key}", "time": "22:00:00"}, blocking=True)
+    assert state(home, "sensor.office_level") == "80.0"
+    assert state(home, "sensor.office_phase") == "on"
+    assert state(home, "sensor.office_colour_temperature") == "5000"
+    assert last(calls, "light.desk").data == {"entity_id": "light.desk", "transition": 2, "brightness": 204, "color_temp_kelvin": 5000}
+    assert "color_temp_kelvin" not in last(calls, "light.plain").data  # no colour temperature support
+    freezer.move_to("2026-11-04 17:30:00+01:00")  # after sunset: warmer, level unchanged
+    async_fire_time_changed(home, dt_util.utcnow())
     await home.async_block_till_done()
-    assert home.states.get("sensor.living_phase").state == "paused"
-    assert len(calls["on"]) + len(calls["off"]) == sent
+    assert state(home, "sensor.office_level") == "80.0"
+    assert int(state(home, "sensor.office_colour_temperature")) < 5000
+    freezer.move_to("2026-11-04 22:20:00+01:00")  # off at 22:00, fading for 30 min
+    async_fire_time_changed(home, dt_util.utcnow())
+    await home.async_block_till_done()
+    assert state(home, "sensor.office_phase") == "off_fade"
+    home.states.async_set("light.desk", "on", {**home.states.get("light.desk").attributes, "brightness": 68}, context=Context())  # reports the fade
+    await tick(home, freezer, 11)
+    assert state(home, "switch.office_auto") == "off"
+    assert last(calls, "light.desk").service == "turn_off"
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.office_auto"}, blocking=True)  # working late
+    await tick(home, freezer, 30)
+    assert state(home, "switch.office_auto") == "on"
 
 
-async def test_level_override_until_duration(home, calls, freezer):
-    entry = await setup_zone(home)
-    await home.services.async_call(DOMAIN, "set_override", {"zone": [_device(home, entry)], "mode": "level", "level": 90, "until": "duration", "duration": {"minutes": 30}}, blocking=True)
-    assert home.states.get("sensor.living_level").state == "90.0"
-    await tick(home, freezer, 31)
-    assert home.states.get("select.living_mode").state == "auto"
+async def test_color_temp_is_clamped_to_the_light(home, calls, freezer):
+    freezer.move_to("2026-11-04 19:00:00+01:00")  # dark: night colour 2400 K, light minimum 2700 K
+    await setup_zone(home, OFFICE, title="Office")
+    assert state(home, "sensor.office_colour_temperature") == "2400"
+    assert last(calls, "light.desk").data["color_temp_kelvin"] == 2700
+
+
+async def test_manual_color_temp_change_pauses_light(home, calls, freezer):
+    freezer.move_to("2026-11-04 13:00:00+01:00")
+    await setup_zone(home, OFFICE, title="Office")
+    freezer.tick(timedelta(seconds=30))
+    home.states.async_set("light.desk", "on", {**home.states.get("light.desk").attributes, "brightness": 204, "color_temp_kelvin": 3000}, context=Context())
+    await home.async_block_till_done()
+    assert home.states.get("sensor.office_level").attributes["paused_lights"] == ["light.desk"]
 
 
 async def test_phase_changed_event(home, calls, freezer):
     events = async_capture_events(home, EVENT_PHASE_CHANGED)
     await setup_zone(home)
-    home.states.async_set("input_boolean.sleep", "on")
-    await home.async_block_till_done()
-    assert events[-1].data | {"zone_id": None} == {"zone": "Living", "zone_id": None, "from": "cosy", "to": "sleep"}
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_override"}, blocking=True)
+    assert events[-1].data | {"zone_id": None} == {"zone": "Living", "zone_id": None, "from": "cosy", "to": "override"}
 
 
-async def test_settings_survive_reload(home, calls):
+async def test_settings_and_auto_survive_reload(home, calls):
     entry = await setup_zone(home)
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 35}, blocking=True)
+    await home.services.async_call(DOMAIN, "turn_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
     await home.config_entries.async_reload(entry.entry_id)
     await home.async_block_till_done()
-    assert home.states.get("number.living_cosy_level").state == "35.0"
-
-
-def _device(hass, entry):
-    subentry_id = next(iter(entry.subentries))
-    return dr.async_get(hass).async_get_device_by_identifier((DOMAIN, subentry_id), entry.entry_id).id
+    assert state(home, "number.living_cosy_level") == "35.0"
+    assert state(home, "switch.living_auto") == "off"
+    assert home.states.get("switch.living_auto").attributes["until"] is not None
