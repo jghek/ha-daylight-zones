@@ -183,3 +183,28 @@ async def test_settings_and_auto_survive_reload(home, calls):
     assert state(home, "number.living_cosy_level") == "35.0"
     assert state(home, "switch.living_auto") == "off"
     assert home.states.get("switch.living_auto").attributes["until"] is not None
+
+
+async def test_override_survives_reload(home, calls, freezer):
+    entry = await setup_zone(home)
+    await home.services.async_call(DOMAIN, "override_on", {"zone": [device(home, entry)], "level": 90, "until": "duration", "duration": {"minutes": 30}}, blocking=True)
+    until = home.states.get("switch.living_override").attributes["until"]
+    await home.config_entries.async_reload(entry.entry_id)
+    await home.async_block_till_done()
+    assert state(home, "switch.living_override") == "on"
+    assert state(home, "sensor.living_level") == "90.0"
+    assert home.states.get("switch.living_override").attributes == home.states.get("switch.living_override").attributes | {"until": until, "ends": "duration"}
+    await tick(home, freezer, 31)
+    assert state(home, "switch.living_override") == "off"
+
+
+async def test_override_that_ended_during_a_restart_is_off_afterwards(home, calls, freezer):
+    entry = await setup_zone(home)
+    await home.services.async_call(DOMAIN, "override_on", {"zone": [device(home, entry)], "until": "duration", "duration": {"minutes": 30}}, blocking=True)
+    await home.config_entries.async_unload(entry.entry_id)
+    await home.async_block_till_done()
+    freezer.tick(timedelta(hours=1))  # Home Assistant down past the override's end
+    assert await home.config_entries.async_setup(entry.entry_id)
+    await home.async_block_till_done()
+    assert state(home, "switch.living_override") == "off"
+    assert state(home, "sensor.living_phase") == "cosy"

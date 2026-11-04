@@ -105,6 +105,12 @@ class ZoneController:
         self.auto, self.auto_since, self.auto_until = on, since, until
 
     @callback
+    def restore_override(self, until: str | None, deadline: datetime | None, phase: str | None) -> None:
+        """Restore an active override after a restart; an end that passed meanwhile ends it on the first update."""
+        self.override = True
+        self._override_end = {"until": until, "deadline": deadline, "phase": phase}
+
+    @callback
     def set_setting(self, key: str, value: Any) -> None:
         self.settings[key] = value
         if self._started:
@@ -339,8 +345,9 @@ class ZoneController:
         return sorted(self._paused)
 
     @property
-    def override_until(self) -> datetime | None:
-        return self._override_end.get("deadline")
+    def override_end(self) -> dict[str, Any]:
+        """How the override ends: until (next_phase / noon / duration), deadline, and the phase it started in."""
+        return dict(self._override_end)
 
     def _notify(self) -> None:
         for listener in list(self._listeners):

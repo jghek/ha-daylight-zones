@@ -264,7 +264,7 @@ Entities for settings a zone does not use are not created.
 | `number.<zone>_off_hours_fade` | min | off hours | 30 |
 | `number.<zone>_override_level` | % | always | 80 |
 
-Settings and the auto switch (with its `until`) survive restarts. The override does not.
+Settings, the auto switch and the override switch survive restarts, each with its `until`. An end that passed while Home Assistant was down takes effect on the first update after the restart.
 
 ## 11. Implementation outline
 

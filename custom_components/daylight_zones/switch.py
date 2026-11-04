@@ -50,8 +50,8 @@ class AutoSwitch(ZoneEntity, SwitchEntity, RestoreEntity):
         self.zone.set_auto(False)
 
 
-class OverrideSwitch(ZoneEntity, SwitchEntity):
-    """On: the zone's lights at the override level until switched off, at the latest the next solar noon."""
+class OverrideSwitch(ZoneEntity, SwitchEntity, RestoreEntity):
+    """On: the zone's lights at the override level until switched off, at the latest the next solar noon. Survives restarts."""
 
     _attr_name = "Override"
     _attr_icon = "mdi:lightbulb-on"
@@ -59,14 +59,21 @@ class OverrideSwitch(ZoneEntity, SwitchEntity):
     def __init__(self, zone) -> None:
         super().__init__(zone, "override")
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None and last.state == STATE_ON:
+            until = dt_util.parse_datetime(last.attributes["until"]) if last.attributes.get("until") else None
+            self.zone.restore_override(last.attributes.get("ends"), until, last.attributes.get("phase"))
+
     @property
     def is_on(self) -> bool:
         return self.zone.override
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        until = self.zone.override_until
-        return {"until": until.isoformat() if until else None}
+        end = self.zone.override_end
+        until: datetime | None = end.get("deadline")
+        return {"until": until.isoformat() if until else None, "ends": end.get("until"), "phase": end.get("phase")}
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self.zone.set_override(True)
