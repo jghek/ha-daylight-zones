@@ -13,7 +13,8 @@
     "zone": {
       "entry_type": "Zone",
       "initiate_flow": {
-        "user": "Add zone"
+        "user": "Add zone",
+        "reconfigure": "Reconfigure zone"
       },
       "step": {
         "user": {
