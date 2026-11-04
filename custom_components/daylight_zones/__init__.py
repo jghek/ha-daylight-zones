@@ -19,20 +19,20 @@ type DaylightZonesEntry = ConfigEntry[dict[str, ZoneController]]
 
 ZONES = vol.All(cv.ensure_list, [cv.string])
 SCHEMAS = {
-    "turn_on": vol.Schema({vol.Required("zone"): ZONES}),
-    "turn_off": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("until"): vol.In(["noon"]), vol.Optional("transition"): vol.All(vol.Coerce(float), vol.Range(min=0, max=300))}),
-    "toggle": vol.Schema({vol.Required("zone"): ZONES}),
-    "set_override": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("level"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)), vol.Optional("until", default="noon"): vol.In(UNTIL), vol.Optional("duration"): cv.positive_time_period}),
-    "clear_override": vol.Schema({vol.Required("zone"): ZONES}),
-    "toggle_override": vol.Schema({vol.Required("zone"): ZONES}),
+    "auto_on": vol.Schema({vol.Required("zone"): ZONES}),
+    "auto_off": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("until"): vol.In(["noon"]), vol.Optional("transition"): vol.All(vol.Coerce(float), vol.Range(min=0, max=300))}),
+    "auto_toggle": vol.Schema({vol.Required("zone"): ZONES}),
+    "override_on": vol.Schema({vol.Required("zone"): ZONES, vol.Optional("level"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)), vol.Optional("until", default="noon"): vol.In(UNTIL), vol.Optional("duration"): cv.positive_time_period}),
+    "override_off": vol.Schema({vol.Required("zone"): ZONES}),
+    "override_toggle": vol.Schema({vol.Required("zone"): ZONES}),
 }
 HANDLERS = {
-    "turn_on": lambda zone, data: zone.set_auto(True),
-    "turn_off": lambda zone, data: zone.set_auto(False, data.get("until"), data.get("transition")),
-    "toggle": lambda zone, data: zone.toggle_auto(),
-    "set_override": lambda zone, data: zone.set_override(True, data.get("level"), data["until"], data.get("duration")),
-    "clear_override": lambda zone, data: zone.set_override(False),
-    "toggle_override": lambda zone, data: zone.set_override(not zone.override),
+    "auto_on": lambda zone, data: zone.set_auto(True),
+    "auto_off": lambda zone, data: zone.set_auto(False, data.get("until"), data.get("transition")),
+    "auto_toggle": lambda zone, data: zone.toggle_auto(),
+    "override_on": lambda zone, data: zone.set_override(True, data.get("level"), data["until"], data.get("duration")),
+    "override_off": lambda zone, data: zone.set_override(False),
+    "override_toggle": lambda zone, data: zone.set_override(not zone.override),
 }
 
 

@@ -80,7 +80,7 @@
     }
   },
   "services": {
-    "turn_on": {
+    "auto_on": {
       "name": "Turn on",
       "description": "Switch auto on: follow the sun and manage the lights.",
       "fields": {
@@ -90,7 +90,7 @@
         }
       }
     },
-    "turn_off": {
+    "auto_off": {
       "name": "Turn off",
       "description": "Switch auto off: lights off, and the zone leaves them alone.",
       "fields": {
@@ -108,7 +108,7 @@
         }
       }
     },
-    "toggle": {
+    "auto_toggle": {
       "name": "Toggle",
       "description": "Toggle auto.",
       "fields": {
@@ -118,7 +118,7 @@
         }
       }
     },
-    "set_override": {
+    "override_on": {
       "name": "Set override",
       "description": "Lights at a set level, also when auto is off; for example for visitors.",
       "fields": {
@@ -140,7 +140,7 @@
         }
       }
     },
-    "clear_override": {
+    "override_off": {
       "name": "Clear override",
       "description": "End the override.",
       "fields": {
@@ -150,7 +150,7 @@
         }
       }
     },
-    "toggle_override": {
+    "override_toggle": {
       "name": "Toggle override",
       "description": "Switch the override on (at the zone's override level, until the next solar noon) or off.",
       "fields": {

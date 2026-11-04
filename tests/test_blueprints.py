@@ -22,7 +22,7 @@ def install(hass) -> None:
 async def test_sleep_mode_blueprint(home, calls):
     entry = await setup_zone(home)
     install(home)
-    turn_off = async_mock_service(home, "daylight_zones", "turn_off")
+    turn_off = async_mock_service(home, "daylight_zones", "auto_off")
     home.states.async_set("input_boolean.nightmode", "off")
     assert await async_setup_component(home, "automation", {"automation": [{"use_blueprint": {"path": "daylight_zones/sleep_mode.yaml", "input": {
         "sleep_entity": "input_boolean.nightmode", "zones": [device(home, entry)], "transition": 10}}}]})
@@ -37,8 +37,13 @@ async def test_trigger_blueprint_toggles_override_on_a_door_contact(home, calls)
     install(home)
     home.states.async_set("binary_sensor.office_door", "off")
     assert await async_setup_component(home, "automation", {"automation": [{"use_blueprint": {"path": "daylight_zones/trigger_zone_action.yaml", "input": {
-        "triggers": [{"trigger": "state", "entity_id": "binary_sensor.office_door", "to": "on"}], "zones": [device(home, entry)], "zone_action": "toggle_override"}}}]})
+        "triggers": [{"trigger": "state", "entity_id": "binary_sensor.office_door", "to": "on"}], "zones": [device(home, entry)], "zone_action": "override_toggle"}}}]})
     await home.async_block_till_done()
     home.states.async_set("binary_sensor.office_door", "on")
     await home.async_block_till_done()
     assert home.states.get("switch.living_override").state == "on"
+
+
+async def test_action_names(home, calls):
+    await setup_zone(home)
+    assert set(home.services.async_services_for_domain("daylight_zones")) == {"auto_on", "auto_off", "auto_toggle", "override_on", "override_off", "override_toggle"}

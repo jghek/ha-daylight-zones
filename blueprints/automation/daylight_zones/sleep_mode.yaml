@@ -28,7 +28,7 @@ triggers:
     entity_id: !input sleep_entity
     to: "on"
 actions:
-  - action: daylight_zones.turn_off
+  - action: daylight_zones.auto_off
     data:
       zone: !input zones
       until: noon

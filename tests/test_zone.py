@@ -74,7 +74,7 @@ async def test_auto_off_turns_lights_off_and_leaves_them(home, calls, freezer):
     entry = await setup_zone(home)
     home.states.async_set("light.a", "on", {"brightness": 77}, context=Context())
     await home.async_block_till_done()
-    await home.services.async_call(DOMAIN, "turn_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
+    await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
     assert last(calls, "light.a").service == "turn_off"
     assert state(home, "sensor.living_phase") == "auto_off"
     sent = count(calls, "light.a")
@@ -100,7 +100,7 @@ async def test_override_switch_also_works_when_auto_is_off(home, calls, freezer)
 
 async def test_override_until_duration(home, calls, freezer):
     entry = await setup_zone(home)
-    await home.services.async_call(DOMAIN, "set_override", {"zone": [device(home, entry)], "level": 90, "until": "duration", "duration": {"minutes": 30}}, blocking=True)
+    await home.services.async_call(DOMAIN, "override_on", {"zone": [device(home, entry)], "level": 90, "until": "duration", "duration": {"minutes": 30}}, blocking=True)
     assert state(home, "sensor.living_level") == "90.0"
     await tick(home, freezer, 31)
     assert state(home, "switch.living_override") == "off"
@@ -177,7 +177,7 @@ async def test_phase_changed_event(home, calls, freezer):
 async def test_settings_and_auto_survive_reload(home, calls):
     entry = await setup_zone(home)
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 35}, blocking=True)
-    await home.services.async_call(DOMAIN, "turn_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
+    await home.services.async_call(DOMAIN, "auto_off", {"zone": [device(home, entry)], "until": "noon"}, blocking=True)
     await home.config_entries.async_reload(entry.entry_id)
     await home.async_block_till_done()
     assert state(home, "number.living_cosy_level") == "35.0"

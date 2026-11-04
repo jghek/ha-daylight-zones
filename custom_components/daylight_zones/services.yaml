@@ -1,4 +1,4 @@
-turn_on:
+auto_on:
   fields:
     zone: &zone
       required: true
@@ -6,7 +6,7 @@ turn_on:
         device:
           integration: daylight_zones
           multiple: true
-turn_off:
+auto_off:
   fields:
     zone: *zone
     until:
@@ -16,10 +16,10 @@ turn_off:
     transition:
       selector:
         number: {min: 0, max: 300, unit_of_measurement: s}
-toggle:
+auto_toggle:
   fields:
     zone: *zone
-set_override:
+override_on:
   fields:
     zone: *zone
     level:
@@ -33,9 +33,9 @@ set_override:
     duration:
       selector:
         duration: {}
-clear_override:
+override_off:
   fields:
     zone: *zone
-toggle_override:
+override_toggle:
   fields:
     zone: *zone

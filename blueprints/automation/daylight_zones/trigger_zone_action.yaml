@@ -19,22 +19,22 @@ blueprint:
           multiple: true
     zone_action:
       name: Action
-      default: toggle
+      default: auto_toggle
       selector:
         select:
           options:
             - label: "Auto: toggle"
-              value: toggle
+              value: auto_toggle
             - label: "Auto: on (follow the sun)"
-              value: turn_on
+              value: auto_on
             - label: "Auto: off (lights off)"
-              value: turn_off
+              value: auto_off
             - label: "Override: toggle"
-              value: toggle_override
+              value: override_toggle
             - label: "Override: on"
-              value: set_override
+              value: override_on
             - label: "Override: off"
-              value: clear_override
+              value: override_off
 mode: queued
 max_exceeded: silent
 variables:

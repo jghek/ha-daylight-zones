@@ -208,12 +208,12 @@ All take `zone`: one or more zone devices.
 
 | Action | Fields | Effect |
 |---|---|---|
-| `daylight_zones.turn_on` | | Auto on. |
-| `daylight_zones.turn_off` | `until` (`noon`), `transition` (s) | Auto off, lights off. With `until: noon`, auto switches back on at the next solar noon. |
-| `daylight_zones.toggle` | | Toggle auto. |
-| `daylight_zones.set_override` | `level` (%), `until` (`next_phase` / `noon` / `duration`, default `noon`), `duration` | Override on. |
-| `daylight_zones.clear_override` | | Override off. |
-| `daylight_zones.toggle_override` | | Toggle override (until the next solar noon). |
+| `daylight_zones.auto_on` | | Auto on. |
+| `daylight_zones.auto_off` | `until` (`noon`), `transition` (s) | Auto off, lights off. With `until: noon`, auto switches back on at the next solar noon. |
+| `daylight_zones.auto_toggle` | | Toggle auto. |
+| `daylight_zones.override_on` | `level` (%), `until` (`next_phase` / `noon` / `duration`, default `noon`), `duration` | Override on. |
+| `daylight_zones.override_off` | | Override off. |
+| `daylight_zones.override_toggle` | | Toggle override (until the next solar noon). |
 
 ### 9.2 Event
 
