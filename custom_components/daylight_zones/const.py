@@ -94,11 +94,12 @@ def light_title(hass, zone_title: str, entity_id: str) -> str:
 
 
 def describe_light(limits: dict) -> str:
-    """'dimmer 0-60 %' or 'on/off from 50 %', for the level sensor's attributes."""
-    kind, scale, minimum, threshold = light_settings(limits)
-    return f"on/off from {threshold:g} %" if kind == LIGHT_ON_OFF else f"dimmer {minimum:g}-{scale:g} %"
+    """'dimmer 0-60 %, override 100 %' or 'on/off from 50 %', for the level sensor's attributes."""
+    kind, scale, minimum, threshold, override_scale = light_settings(limits)
+    return f"on/off from {threshold:g} %" if kind == LIGHT_ON_OFF else f"dimmer {minimum:g}-{scale:g} %, override {override_scale:g} %"
 
 
-def light_settings(limits: dict) -> tuple[str, float, float, float]:
-    """(type, scale, min, threshold) for one light; reads the older max/min format too."""
-    return limits.get("type", LIGHT_DIMMER), limits.get("scale", limits.get("max", 100)), limits.get("min", 0), limits.get("threshold", 50)
+def light_settings(limits: dict) -> tuple[str, float, float, float, float]:
+    """(type, scale, min, threshold, override scale) for one light; reads the older max/min format too. Override scale defaults to twice the scale, at most 100 %."""
+    scale = limits.get("scale", limits.get("max", 100))
+    return limits.get("type", LIGHT_DIMMER), scale, limits.get("min", 0), limits.get("threshold", 50), limits.get("override_scale", min(100, scale * 2))

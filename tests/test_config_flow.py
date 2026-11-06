@@ -39,7 +39,7 @@ async def test_migration_makes_one_light_subentry_per_light(home, calls):
         "light.a": ("Living: a", {"entity": "light.a", "zone": zone_id(entry), "type": "dimmer", "scale": 50, "min": 0, "threshold": 50}),
         "light.b": ("Living: b", {"entity": "light.b", "zone": zone_id(entry), "type": "dimmer", "scale": 100, "min": 10, "threshold": 50}),
     }
-    assert home.states.get("sensor.living_level").attributes["lights"] == {"light.a": "dimmer 0-50 %", "light.b": "dimmer 10-100 %"}
+    assert home.states.get("sensor.living_level").attributes["lights"] == {"light.a": "dimmer 0-50 %, override 100 %", "light.b": "dimmer 10-100 %, override 100 %"}
 
 
 async def test_add_zone_then_a_light(home, calls):
@@ -52,7 +52,17 @@ async def test_add_zone_then_a_light(home, calls):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await home.async_block_till_done()
     assert lights(entry)["light.c"][0] == "Hallway: Hall ceiling"
-    assert home.states.get("sensor.hallway_level").attributes["lights"] == {"light.c": "dimmer 5-40 %"}
+    assert home.states.get("sensor.hallway_level").attributes["lights"] == {"light.c": "dimmer 5-40 %, override 80 %"}
+
+
+async def test_light_override_scale_is_optional(home, calls):
+    entry = await setup_zone(home)
+    form = {"entity": "light.c", "zone": zone_id(entry), "type": "dimmer", "scale": 4, "min": 0, "threshold": 50}
+    await configure(home, entry, SUBENTRY_LIGHT, form | {"override_scale": 80})
+    assert lights(entry)["light.c"][1]["override_scale"] == 80
+    light_id = next(sid for sid, sub in entry.subentries.items() if sub.data.get("entity") == "light.c")
+    await configure(home, entry, SUBENTRY_LIGHT, form, SOURCE_RECONFIGURE, light_id)
+    assert "override_scale" not in lights(entry)["light.c"][1]  # emptied: back to the default, twice the scale
 
 
 async def test_light_can_only_be_in_one_zone(home, calls):

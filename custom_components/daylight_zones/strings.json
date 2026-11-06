@@ -58,24 +58,26 @@
       "step": {
         "user": {
           "title": "Light",
-          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (a straight line; 0 % is off). On/off: on when the zone level reaches 'threshold'. Switches are always on/off.",
+          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (a straight line; 0 % is off). During an override 'override scale' takes the place of 'scale'; left empty, it is twice the scale (at most 100 %). On/off: on when the zone level reaches 'threshold'. Switches are always on/off.",
           "data": {
             "entity": "Light or switch",
             "zone": "Zone",
             "type": "Type",
             "scale": "Scale %",
+            "override_scale": "Override scale %",
             "min": "Min %",
             "threshold": "Threshold %"
           }
         },
         "reconfigure": {
           "title": "Light",
-          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (a straight line; 0 % is off). On/off: on when the zone level reaches 'threshold'. Switches are always on/off.",
+          "description": "Dimmer: at 1 % zone level the light gets 'min', at 100 % it gets 'scale' (a straight line; 0 % is off). During an override 'override scale' takes the place of 'scale'; left empty, it is twice the scale (at most 100 %). On/off: on when the zone level reaches 'threshold'. Switches are always on/off.",
           "data": {
             "entity": "Light or switch",
             "zone": "Zone",
             "type": "Type",
             "scale": "Scale %",
+            "override_scale": "Override scale %",
             "min": "Min %",
             "threshold": "Threshold %"
           }

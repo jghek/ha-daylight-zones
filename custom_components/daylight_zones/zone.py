@@ -236,7 +236,7 @@ class ZoneController:
         kelvin = curve.color_temp(self._color_temp(), e) if self.config[CONF_USE_COLOR_TEMP] else None
         self._rate_limit(target, kelvin, phase, now)
         if target is not None:
-            self._drive(self._level, self._kelvin)
+            self._drive(self._level, self._kelvin, phase == "override")
 
         old_phase = self.snapshot.phase
         self.snapshot = Snapshot(self._level if target is not None else None, self._kelvin, phase, round(e, 2), round(curve_pct, 1), round(hours_pct, 1), caps)
@@ -276,14 +276,14 @@ class ZoneController:
         until, deadline = self._override_end.get("until"), self._override_end.get("deadline")
         return (deadline is not None and now >= deadline) or (until == "next_phase" and self._base_phase != self._override_end.get("phase"))
 
-    def _drive(self, level: float, kelvin: float | None) -> None:
+    def _drive(self, level: float, kelvin: float | None, override: bool) -> None:
         for entity_id, limits in self.lights.items():
             if entity_id in self._paused:
                 continue
             state = self.hass.states.get(entity_id)
             if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 continue
-            kind, scale, minimum, threshold = light_settings(limits)
+            kind, scale, minimum, threshold, override_scale = light_settings(limits)
             is_light = entity_id.startswith("light.")
             sent = self._sent.get(entity_id) or Sent(state.state == STATE_ON, _brightness_pct(state), state.attributes.get("color_temp_kelvin"), dt_util.utcnow(), 0)
             light_k = _clamp_kelvin(state, kelvin) if is_light else None
@@ -292,7 +292,7 @@ class ZoneController:
                 on = curve.on_off(level, threshold, sent.on, ON_OFF_MARGIN)
                 pct, same_level = (100.0 if on else 0.0), sent.on == on
             else:
-                pct = curve.dimmer_brightness(level, scale, minimum)
+                pct = curve.dimmer_brightness(level, override_scale if override else scale, minimum)
                 brightness = round(pct * 2.55)
                 on = brightness > 0  # off until the light would get at least 1 of 255; `min` raises it above that
                 pct, same_level = brightness / 2.55, sent.on == on and (not on or max(1, round(sent.pct * 2.55)) == brightness)

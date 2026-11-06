@@ -178,7 +178,7 @@ flowchart TD
 
   | Type | Settings | Output |
   |---|---|---|
-  | `dimmer` (default for lights that can dim) | `scale` %, `min` % | 0 % zone level: off; 1–100 %: a straight line from `min` to `scale`, y = min + level × (scale − min) / 100. `scale` is what this light gets at 100 %, so lights of different strength can share a zone; `min` is where a dimmer starts to give light |
+  | `dimmer` (default for lights that can dim) | `scale` %, `min` %, `override scale` % | 0 % zone level: off; 1–100 %: a straight line from `min` to `scale`, y = min + level × (scale − min) / 100. `scale` is what this light gets at 100 %, so lights of different strength can share a zone; `min` is where a dimmer starts to give light. During an override `override scale` takes the place of `scale`, so a light kept dim by its scale can still be bright on override; empty means twice the scale, at most 100 % |
   | `on_off` (default for lights that cannot dim; always for `switch.*`) | `threshold` % | on when the zone level reaches the threshold, off when it drops more than 2 % below it, so it does not flicker around the threshold |
 
 - Colour temperature is only sent to lights (not switches) that support it (§5).
@@ -236,11 +236,11 @@ Light (subentry "Add light", one per light; the cogwheel reconfigures it, and mo
 | Light or switch | one `light.*` or `switch.*` entity, not in another zone |
 | Zone | one of the zones |
 | Type | `dimmer` (default for lights that can dim) / `on_off` (always for switches) |
-| Scale %, Min % | dimmers (§8) |
+| Scale %, Min %, Override scale % (optional; empty = twice the scale, at most 100 %) | dimmers (§8) |
 | Threshold % | on/off (§8) |
 
 The light's title is "<zone>: <friendly name>". Version 1 entries kept the lights inside the zone; they are migrated to light subentries on the first start of 0.2.0.
-`sensor.<zone>_level` lists the zone's lights in its `lights` attribute, for example `dimmer 0-60 %`.
+`sensor.<zone>_level` lists the zone's lights in its `lights` attribute, for example `dimmer 0-60 %, override 100 %`.
 
 ### 10.2 Zone entities
 

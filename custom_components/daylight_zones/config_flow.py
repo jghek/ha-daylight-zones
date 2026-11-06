@@ -104,6 +104,7 @@ class LightSubentryFlow(ConfigSubentryFlow):
             vol.Required(CONF_ZONE): selector.SelectSelector(selector.SelectSelectorConfig(options=[{"value": sid, "label": title} for sid, title in zones.items()])),
             vol.Required("type", default=defaults["type"]): selector.SelectSelector(selector.SelectSelectorConfig(options=[LIGHT_DIMMER, LIGHT_ON_OFF], translation_key="light_type")),
             vol.Required("scale", default=defaults["scale"]): PERCENT,
+            vol.Optional("override_scale", description={"suggested_value": current.get("override_scale")}): PERCENT,
             vol.Required("min", default=defaults["min"]): PERCENT,
             vol.Required("threshold", default=defaults["threshold"]): PERCENT,
         })

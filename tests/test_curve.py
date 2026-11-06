@@ -184,8 +184,9 @@ def test_on_off_threshold_with_margin():
 
 def test_light_settings_read_the_older_format():
     from custom_components.daylight_zones.const import light_settings
-    assert light_settings({"max": 40, "min": 5}) == ("dimmer", 40, 5, 50)
-    assert light_settings({"type": "on_off", "threshold": 20}) == ("on_off", 100, 0, 20)
+    assert light_settings({"max": 40, "min": 5}) == ("dimmer", 40, 5, 50, 80)
+    assert light_settings({"type": "on_off", "threshold": 20}) == ("on_off", 100, 0, 20, 100)
+    assert light_settings({"scale": 4, "override_scale": 80}) == ("dimmer", 4, 0, 50, 80)
 
 
 # --- 1:1 comparison with the current template sensors -------------------------------------------------------------

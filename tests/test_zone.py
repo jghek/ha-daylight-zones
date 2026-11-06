@@ -97,6 +97,18 @@ async def test_override_switch_also_works_when_auto_is_off(home, calls, freezer)
     assert last(calls, "light.b").service == "turn_off"  # auto is off, so the lights go off
 
 
+async def test_override_uses_the_override_scale(home, calls, freezer):
+    entry = await setup_zone(home, ZONE | {"lights": {"light.a": {"type": "dimmer", "scale": 4, "min": 0}, "light.b": {"type": "dimmer", "scale": 30, "min": 10}}})
+    light_a = next(sub for sub in entry.subentries.values() if sub.data.get("entity") == "light.a")
+    home.config_entries.async_update_subentry(entry, light_a, data=dict(light_a.data) | {"override_scale": 80})
+    await home.async_block_till_done()
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_override"}, blocking=True)
+    assert last(calls, "light.a").data["brightness"] == dimmer(80, 80, 0)  # override scale set: 80 % of 80 %
+    assert last(calls, "light.b").data["brightness"] == dimmer(80, 60, 10)  # not set: twice the scale
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_override"}, blocking=True)
+    assert last(calls, "light.a").data["brightness"] == dimmer(60, 4, 0)  # back on the normal scale (cosy 60 %)
+
+
 async def test_override_until_duration(home, calls, freezer):
     entry = await setup_zone(home)
     await home.services.async_call(DOMAIN, "override_on", {"zone": [device(home, entry)], "level": 90, "until": "duration", "duration": {"minutes": 30}}, blocking=True)
