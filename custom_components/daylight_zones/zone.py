@@ -183,7 +183,7 @@ class ZoneController:
             return
         if new.context.id in self._contexts or new.context.parent_id in self._contexts:
             return
-        if _look(old) == _look(new) or not (self.auto or self.override):
+        if _look(old) == _look(new):
             return
         sent = self._sent.get(entity_id)
         if sent is not None:
@@ -191,6 +191,9 @@ class ZoneController:
                 return
             if sent.on == (new.state == STATE_ON) and (not sent.on or _matches(sent, new)):
                 return
+        self._sent.pop(entity_id, None)  # no longer as we sent it: the next command starts from the light's real state
+        if not (self.auto or self.override):
+            return
         if entity_id not in self._paused:
             _LOGGER.debug("%s: %s changed by hand, paused", self.name, entity_id)
             self._paused[entity_id] = self._base_phase or ""

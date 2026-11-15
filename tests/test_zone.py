@@ -326,3 +326,16 @@ async def test_transition_is_a_zone_setting(home, calls, freezer):
     await home.services.async_call("number", "set_value", {"entity_id": "number.living_cosy_level", "value": 40}, blocking=True)
     await tick(home, freezer, 5)
     assert last(calls, "light.b").data["transition"] == 0.5
+
+
+async def test_light_switched_off_by_hand_comes_back_on_with_the_zone(home, calls, freezer):
+    await setup_zone(home)
+    home.states.async_set("light.a", "on", {"brightness": last(calls, "light.a").data["brightness"]}, context=Context())  # the light reports our command
+    freezer.tick(timedelta(seconds=30))
+    home.states.async_set("light.a", "off", {}, context=Context())  # switched off in the app
+    await home.async_block_till_done()
+    await home.services.async_call("switch", "turn_off", {"entity_id": "switch.living_auto"}, blocking=True)  # nothing to send: the light is off already
+    sent = count(calls, "light.a")
+    await home.services.async_call("switch", "turn_on", {"entity_id": "switch.living_auto"}, blocking=True)
+    assert count(calls, "light.a") == sent + 1
+    assert last(calls, "light.a").service == "turn_on"
